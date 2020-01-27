@@ -90,7 +90,6 @@
 *** PinPong
 
 
-
 *** Transfer
 
 Инициатором перевода денег является пользователь. Чтобы сделать перевод
@@ -818,9 +817,267 @@ Owner, с шансом попасть в состояние GameOver.
 Owner, а второй (который обнаруживает это) делает UnPublish
 SharedObject-а, после чего они оба переходят к поиску нового партнера.
 
+*** Разпарсить пинг-понг
+
+#+NAME:
+#+BEGIN_SRC go
+  ///
+  //    Copyright 2019 Insolar Technologies
+  //
+  //    Licensed under the Apache License, Version 2.0 (the "License");
+  //    you may not use this file except in compliance with the License.
+  //    You may obtain a copy of the License at
+  //
+  //        http://www.apache.org/licenses/LICENSE-2.0
+  //
+  //    Unless required by applicable law or agreed to in writing, software
+  //    distributed under the License is distributed on an "AS IS" BASIS,
+  //    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  //    See the License for the specific language governing permissions and
+  //    limitations under the License.
+  ///
+
+  package main
+
+  import (
+      "fmt"
+      "github.com/insolar/assured-ledger/ledger-core/v2/insolar"
+      "github.com/pkg/errors"
+      "go/ast"
+      "go/parser"
+      "go/token"
+      "io/ioutil"
+      "os"
+      "strings"
+  )
+
+  const (
+      TemplateDirectory = "templates"
+
+      filename = "src/github.com/insolar/assured-ledger/ledger-core/v2/conveyor/smachine/ping-pong/example/example_3.go"
+      mainPkg   = "main"
+      errorType = "error"
+      MachineTypeGoPlugin
+  )
+
+  // ParsedFile struct with prepared info we extract from source code
+  type ParsedFile struct {
+      name                string
+      code                []byte
+      fileSet             *token.FileSet
+      node                *ast.File
+      machineType         insolar.MachineType
+      panicIsLogicalError bool
+
+      types        map[string]*ast.TypeSpec
+      methods      map[string][]*ast.FuncDecl
+      constructors map[string][]*ast.FuncDecl
+      contract     string
+  }
+
+  func main() {
+      pathname:= fmt.Sprintf("%s/%s", os.Getenv("GOPATH"), filename)
+      fmt.Printf("\n:: parsing for::['%s']", pathname)
+      parsed, err := ParseFile(pathname, insolar.MachineTypeGoPlugin)
+      fmt.Printf("\n:: <= err: %s \n:: <=parsed: %s", err, parsed)
+  }
+
+  // ParseFile parses a file as Go source code of a smart contract
+  // and returns it as `ParsedFile`
+  func ParseFile(fileName string, machineType insolar.MachineType) (*ParsedFile, error) {
+      res := &ParsedFile{
+          name:        fileName,
+          machineType: machineType,
+      }
+      fmt.Printf("\n:: resource filename: %s", res.name)
+
+      sourceCode, err := slurpFile(fileName)
+      if err != nil {
+          return nil, errors.Wrap(err, "Can't read file")
+      }
+      res.code = sourceCode
+      //fmt.Printf("\n:: resource code: %s", res.code)
+
+      res.fileSet = token.NewFileSet()
+      node, err := parser.ParseFile(res.fileSet, res.name, res.code, parser.ParseComments)
+      if err != nil {
+          return nil, errors.Wrapf(err, "Can't parse %s", fileName)
+      }
+      res.node = node
+      fmt.Printf("\n:: resource node: %s", res.node)
+      //
+      //err = res.parseTypes()
+      //if err != nil {
+      //	return nil, errors.Wrap(err, "")
+      //}
+      //
+      //err = res.parseFunctionsAndMethods()
+      //if err != nil {
+      //	return nil, errors.Wrap(err, "")
+      //}
+      //if res.contract == "" {
+      //	return nil, errors.New("Only one smart contract must exist")
+      //}
+
+      return res, nil
+  }
+
+  func slurpFile(fileName string) ([]byte, error) {
+      file, err := os.OpenFile(fileName, os.O_RDONLY, 0)
+      if err != nil {
+          return nil, errors.Wrap(err, "Can't open file '"+fileName+"'")
+      }
+      defer file.Close() //nolint: errcheck
+
+      res, err := ioutil.ReadAll(file)
+      if err != nil {
+          return nil, errors.Wrap(err, "Can't read file '"+fileName+"'")
+      }
+      return res, nil
+  }
+
+  func (pf *ParsedFile) parseTypes() error {
+      pf.types = make(map[string]*ast.TypeSpec)
+      for _, decl := range pf.node.Decls {
+          tDecl, ok := decl.(*ast.GenDecl)
+          if !ok || tDecl.Tok != token.TYPE {
+              continue
+          }
+
+          for _, e := range tDecl.Specs {
+              typeNode := e.(*ast.TypeSpec)
+
+              err := pf.parseTypeSpec(typeNode)
+              if err != nil {
+                  return err
+              }
+          }
+      }
+
+      return nil
+  }
+
+  func (pf *ParsedFile) parseTypeSpec(typeSpec *ast.TypeSpec) error {
+      if isContractTypeSpec(typeSpec) {
+          if pf.contract != "" {
+              return errors.New("more than one contract in a file")
+          }
+          pf.contract = typeSpec.Name.Name
+      } else {
+          pf.types[typeSpec.Name.Name] = typeSpec
+      }
+
+      return nil
+  }
+
+  func isContractTypeSpec(typeNode *ast.TypeSpec) bool {
+      baseContract := "foundation.BaseContract"
+      st, ok := typeNode.Type.(*ast.StructType)
+      if !ok {
+          return false
+      }
+      if st.Fields == nil || st.Fields.NumFields() == 0 {
+          return false
+      }
+      for _, fd := range st.Fields.List {
+          if len(fd.Names) != 0 {
+              continue // named struct field
+          }
+          selectField, ok := fd.Type.(*ast.SelectorExpr)
+          if !ok {
+              continue
+          }
+          pack := selectField.X.(*ast.Ident).Name
+          class := selectField.Sel.Name
+          if baseContract == (pack + "." + class) {
+              return true
+          }
+      }
+
+      return false
+  }
+
+  func (pf *ParsedFile) parseFunctionsAndMethods() error {
+      pf.methods = make(map[string][]*ast.FuncDecl)
+      pf.constructors = make(map[string][]*ast.FuncDecl)
+      for _, decl := range pf.node.Decls {
+          fd, ok := decl.(*ast.FuncDecl)
+          if !ok || !fd.Name.IsExported() {
+              continue
+          }
+
+          var err error
+          if fd.Recv == nil || fd.Recv.NumFields() == 0 {
+              err = pf.parseConstructor(fd)
+          } else {
+              err = pf.parseMethod(fd)
+          }
+          if err != nil {
+              return err
+          }
+      }
+
+      return nil
+  }
 
 
+  func (pf *ParsedFile) parseConstructor(fd *ast.FuncDecl) error {
+      name := fd.Name.Name
+      if !strings.HasPrefix(name, "New") {
+          return nil // doesn't look like a constructor
+      }
 
+      res := fd.Type.Results
+
+      if res.NumFields() != 2 {
+          return errors.Errorf("Constructor %q should return exactly two values", name)
+      }
+
+      if pf.typeName(res.List[1].Type) != errorType {
+          return errors.Errorf("Constructor %q should return 'error'", name)
+      }
+
+      typename := pf.typeName(res.List[0].Type)
+      pf.constructors[typename] = append(pf.constructors[typename], fd)
+
+      return nil
+  }
+
+
+  func (pf *ParsedFile) parseMethod(fd *ast.FuncDecl) error {
+      name := fd.Name.Name
+
+      res := fd.Type.Results
+      if res.NumFields() < 1 {
+          return errors.Errorf("Method %q should return at least one result (error)", name)
+      }
+
+      lastResType := pf.typeName(res.List[res.NumFields()-1].Type)
+      if lastResType != errorType {
+          return errors.Errorf(
+              "Method %q should return 'error' as last value, but it's %q",
+              name, lastResType,
+          )
+      }
+
+      typename := pf.typeName(fd.Recv.List[0].Type)
+      pf.methods[typename] = append(pf.methods[typename], fd)
+
+      return nil
+  }
+
+  func (pf *ParsedFile) typeName(t ast.Expr) string {
+      if tmp, ok := t.(*ast.StarExpr); ok { // *type
+          t = tmp.X
+      }
+      return pf.codeOfNode(t)
+  }
+
+  // codeOfNode returns source code of an AST node
+  func (pf *ParsedFile) codeOfNode(n ast.Node) string {
+      return string(pf.code[n.Pos()-1 : n.End()-1])
+  }
+#+END_SRC
 
 * unsorted
 
