@@ -819,6 +819,8 @@ SharedObject-а, после чего они оба переходят к пои�
 
 *** Разпарсить пинг-понг
 
+Парсер
+
 #+NAME:
 #+BEGIN_SRC go
   ///
@@ -1078,6 +1080,318 @@ SharedObject-а, после чего они оба переходят к пои�
       return string(pf.code[n.Pos()-1 : n.End()-1])
   }
 #+END_SRC
+
+Код для парсинга
+
+#+BEGIN_SRC go
+  ///
+  //    Copyright 2019 Insolar Technologies
+  //
+  //    Licensed under the Apache License, Version 2.0 (the "License");
+  //    you may not use this file except in compliance with the License.
+  //    You may obtain a copy of the License at
+  //
+  //        http://www.apache.org/licenses/LICENSE-2.0
+  //
+  //    Unless required by applicable law or agreed to in writing, software
+  //    distributed under the License is distributed on an "AS IS" BASIS,
+  //    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  //    See the License for the specific language governing permissions and
+  //    limitations under the License.
+  ///
+
+  package example
+
+  import (
+      "fmt"
+      "time"
+
+      "github.com/insolar/assured-ledger/ledger-core/v2/vanilla/injector"
+      "github.com/insolar/assured-ledger/ledger-core/v2/vanilla/longbits"
+
+      "github.com/insolar/assured-ledger/ledger-core/v2/conveyor/smachine"
+  )
+
+  type StateMachine3 struct {
+      serviceA *ServiceAdapterA
+      catalogC CatalogC
+      catalogD CatalogD
+
+      mutex   smachine.SyncLink
+      testKey longbits.ByteString
+      waitKey string //longbits.ByteString
+      result  string
+      count   int
+  }
+
+  var IterationCount uint64
+  var Limiter = smachine.NewFixedSemaphore(1000, "global")
+
+  /* -------- Declaration ------------- */
+
+  var declarationStateMachine3 smachine.StateMachineDeclaration = &StateMachine3Declaration{}
+
+  type StateMachine3Declaration struct {
+      smachine.StateMachineDeclTemplate
+  }
+
+  func (StateMachine3Declaration) InjectDependencies(sm smachine.StateMachine, _ smachine.SlotLink, injector *injector.DependencyInjector) {
+      s := sm.(*StateMachine3)
+      injector.MustInject(&s.serviceA)
+      injector.MustInject(&s.catalogC)
+  }
+
+  func (StateMachine3Declaration) GetInitStateFor(sm smachine.StateMachine) smachine.InitFunc {
+      s := sm.(*StateMachine3)
+      return s.Init
+  }
+
+  /* -------- Instance ------------- */
+
+  func (s *StateMachine3) GetStateMachineDeclaration() smachine.StateMachineDeclaration {
+      return declarationStateMachine3
+  }
+
+  func (s *StateMachine3) Init(ctx smachine.InitializationContext) smachine.StateUpdate {
+      s.testKey = longbits.WrapStr("make-pair")
+      fmt.Printf("init: %v | %v\n", ctx.SlotLink(), time.Now())
+      return ctx.Jump(s.Start)
+  }
+
+  func (s *StateMachine3) Start(ctx smachine.ExecutionContext) smachine.StateUpdate {
+      // Looking for make-pair shared object
+      if v, ok := s.catalogC.TryGet(ctx, s.testKey) ; ok {
+          // Make-pair found
+          mySharedAccessReport := v.PrepareWithSecondPlayer(func(state *CustomSharedState) {
+              // First Player is already there, I will be Second Player
+              // Key for Game Object
+              key := fmt.Sprintf("%p.%p", state.FirstPlayer, state.SecondPlayer)
+              s.waitKey = key //longbits.ByteString(key)
+          },s ).TryUse(ctx)
+          return smachine.RepeatOrJumpElse(ctx, mySharedAccessReport, s.WaitForGame, s.Wrong)
+      } else {
+          // Make-pair not found
+          report := s.catalogC.GetOrCreate(ctx, s.testKey).PrepareWithFirstPlayer(func(state *CustomSharedState) {
+          }, s).TryUse(ctx)
+          return smachine.RepeatOrJumpElse(ctx, report, s.WaitForSecond, s.Wrong)
+      }
+  }
+
+  func (s *StateMachine3) WaitForSecond(ctx smachine.ExecutionContext) smachine.StateUpdate {
+      // Waiting for Second Player on Make-pair object
+      if v, ok := s.catalogC.TryGet(ctx, s.testKey) ; ok {
+          switcher := false // Default: No Second player
+          mySharedAccessReport := v.Prepare(func(state *CustomSharedState) {
+              if "" != state.SecondPlayer {
+                  switcher = true // Second player is here!
+                  s.waitKey = fmt.Sprintf("%p.%p", state.FirstPlayer, state.SecondPlayer)
+              } else {
+              }
+          }).TryUse(ctx)
+          if switcher {
+              // making new SharedObject for Game and BallOwner initialization
+              myGameSharedStateAccessor := s.catalogD.GetOrCreate(ctx, longbits.ByteString(s.waitKey))
+              mySharedAccessReport := myGameSharedStateAccessor.Prepare(func(state *GameSharedState) {
+                  state.BallOwner = s // I will be owner
+                  state.cnt = 0
+              }).TryUse(ctx)
+              // Go to Game
+              return smachine.RepeatOrJumpElse(ctx, mySharedAccessReport, s.Game, s.Wrong)
+          } else {
+              // No second player, repeat
+              return smachine.RepeatOrJumpElse(ctx, mySharedAccessReport, s.WaitForSecond, s.Wrong)
+          }
+      } else {
+          fmt.Printf("Error (WaitForSecond): Something wrong \n")
+          return ctx.Jump(s.Wrong)
+      }
+  }
+
+  func (s *StateMachine3) WaitForGame(ctx smachine.ExecutionContext) smachine.StateUpdate {
+      // Waiting for Game Object
+      // fmt.Printf("WaitForGame: %s \n", s.waitKey)
+      if v, ok := s.catalogC.TryGet(ctx, longbits.ByteString(s.waitKey)) ; ok {
+          return ctx.Jump(s.Game)
+      } else {
+          // repeat
+          // return ctx.Sleep().ThenRepeat() // - Does not works, why? [TODO]
+          time.After(2*time.Second) // ...same
+          return ctx.Jump(s.WaitForGame)
+      }
+  }
+
+  func (s *StateMachine3) Game(ctx smachine.ExecutionContext) smachine.StateUpdate {
+      fmt.Printf("Game %p \n", s)
+      if v, ok := s.catalogD.TryGet(ctx, longbits.ByteString(s.waitKey)) ; ok {
+          endgame := false
+          mySharedAccessReport := v.Prepare(func(state *GameSharedState) {
+              if s != state.BallOwner {
+                  state.BallOwner = s
+              }
+              state.cnt += 1
+              if state.cnt > 2 {
+                  endgame = true
+              }
+          }).TryUse(ctx)
+          if endgame {
+              // Go to GameOver
+              return smachine.RepeatOrJumpElse(ctx, mySharedAccessReport, s.GameOver, s.Wrong)
+          } else {
+              // repeat
+              return smachine.RepeatOrJumpElse(ctx, mySharedAccessReport, s.Game, s.Wrong)
+          }
+      } else {
+          // Impossible (let it be for dbg)
+          return ctx.Jump(s.Wrong)
+      }
+  }
+
+  func (s *StateMachine3) GameOver(ctx smachine.ExecutionContext) smachine.StateUpdate {
+      return ctx.Stop()
+      //return ctx.Jump(s.GameOver)
+      //return ctx.Stop()
+  }
+
+  func (s *StateMachine3) Wrong(ctx smachine.ExecutionContext) smachine.StateUpdate {
+      fmt.Printf("ErrState: WRONG!!! %p \n", s)
+      return ctx.WaitAnyUntil(time.Now().Add(time.Second)).ThenJump(s.Wrong)
+      //return ctx.Stop()
+  }
+#+END_SRC
+
+Представление парсера
+
+#+BEGIN_SRC go
+  &{
+      %!s(*ast.CommentGroup=<nil>)
+      %!s(token.Pos=637) example
+      [
+          %!s(*ast.GenDecl=&{<nil> 654 75 661 [0xc0001308a0 0xc0001308d0 0xc000130900 0xc000130930 0xc000130960] 888})
+          %!s(*ast.GenDecl=&{<nil> 891 84 0 [0xc000130990] 0})
+          %!s(*ast.GenDecl=&{<nil> 1111 85 0 [0xc0000d27d0] 0})
+          %!s(*ast.GenDecl=&{<nil> 1137 85 0 [0xc0000d2870] 0})
+          %!s(*ast.GenDecl=&{<nil> 1237 85 0 [0xc0000d2910] 0})
+          %!s(*ast.GenDecl=&{<nil> 1330 84 0 [0xc0001309f0] 0})
+          %!s(*ast.FuncDecl=&{<nil> 0xc000130a80 0xc0000a97e0 0xc0000a9c40 0xc000130b40})
+          %!s(*ast.FuncDecl=&{<nil> 0xc000130bd0 0xc0000a9c80 0xc0000a9ee0 0xc000130cc0})
+          %!s(*ast.FuncDecl=&{<nil> 0xc000130d50 0xc0000a9f60 0xc000166020 0xc000130e10})
+          %!s(*ast.FuncDecl=&{<nil> 0xc000130ea0 0xc0001660a0 0xc0001664e0 0xc000130f60})
+          %!s(*ast.FuncDecl=&{<nil> 0xc000130ff0 0xc000166560 0xc000167380 0xc000131350})
+          %!s(*ast.FuncDecl=&{<nil> 0xc0001313e0 0xc000167400 0xc000168620 0xc000131920})
+          %!s(*ast.FuncDecl=&{<nil> 0xc0001319b0 0xc0001686a0 0xc000168d80 0xc000131b90})
+          %!s(*ast.FuncDecl=&{<nil> 0xc000131c20 0xc000168e00 0xc000169b20 0xc00016c120})
+          %!s(*ast.FuncDecl=&{<nil> 0xc00016c1b0 0xc000169ba0 0xc000169d80 0xc00016c270})
+          %!s(*ast.FuncDecl=&{<nil> 0xc00016c300 0xc000169e00 0xc00016e240 0xc00016c3c0})
+          ]
+      scope 0xc00009fd90 {
+          type StateMachine3
+          var IterationCount
+          var Limiter
+          var declarationStateMachine3
+          type StateMachine3Declaration
+      }
+      [
+          %!s(*ast.ImportSpec=&{<nil> <nil> 0xc0000a9080 <nil> 0})
+          %!s(*ast.ImportSpec=&{<nil> <nil> 0xc0000a90a0 <nil> 0})
+          %!s(*ast.ImportSpec=&{<nil> <nil> 0xc0000a90e0 <nil> 0})
+          %!s(*ast.ImportSpec=&{<nil> <nil> 0xc0000a9120 <nil> 0})
+          %!s(*ast.ImportSpec=&{<nil> <nil> 0xc0000a9140 <nil> 0})
+          ]
+      [
+          ServiceAdapterA
+          CatalogC
+          CatalogD
+          smachine
+          longbits
+          string
+          string
+          int
+
+          uint64
+          smachine
+          smachine
+          smachine
+          smachine
+          smachine
+          injector
+          smachine
+          smachine
+          smachine
+          smachine
+          smachine
+          longbits
+          fmt
+          time
+          smachine
+          smachine
+          CustomSharedState
+          fmt
+          smachine
+          CustomSharedState
+          smachine
+          smachine
+          smachine
+          false
+          CustomSharedState
+          true
+          fmt
+          longbits
+          GameSharedState
+          smachine
+          smachine
+          fmt
+          smachine
+          smachine
+          longbits
+          time
+          time
+          smachine
+          smachine
+          fmt
+          longbits
+          false
+          GameSharedState
+          true
+          smachine
+          smachine
+          smachine
+          smachine
+          smachine
+          smachine
+          fmt
+          time
+          time
+          ]
+      [
+          %!s(*ast.CommentGroup=
+              &{[0xc0000a8e40 0xc0000a8e60 0xc0000a8e80 0xc0000a8ec0 0xc0000a8ee0 0xc0000a8f00 0xc0000a8f20 0xc0000a8f40 0xc0000a8f60 0xc0000a8f80 0xc0000a8fa0 0xc0000a8fc0 0xc0000a8fe0 0xc0000a9000 0xc0000a9020
+              ]})
+
+          %!s(*ast.CommentGroup=&{[0xc0000a93e0]})
+          %!s(*ast.CommentGroup=&{[0xc0000a9600]})
+          %!s(*ast.CommentGroup=&{[0xc0000a9ea0]})
+          %!s(*ast.CommentGroup=&{[0xc000166660]})
+          %!s(*ast.CommentGroup=&{[0xc000166860]})
+          %!s(*ast.CommentGroup=&{[0xc0001669a0 0xc0001669c0]})
+          %!s(*ast.CommentGroup=&{[0xc000166c00]})
+          %!s(*ast.CommentGroup=&{[0xc000166ec0]})
+          %!s(*ast.CommentGroup=&{[0xc000167500]})
+          %!s(*ast.CommentGroup=&{[0xc000167740]})
+          %!s(*ast.CommentGroup=&{[0xc000167940]})
+          %!s(*ast.CommentGroup=&{[0xc000167c00]})
+          %!s(*ast.CommentGroup=&{[0xc000167f80]})
+          %!s(*ast.CommentGroup=&{[0xc0001680c0]})
+          %!s(*ast.CommentGroup=&{[0xc0001682c0]})
+          %!s(*ast.CommentGroup=&{[0xc0001687a0 0xc0001687c0]})
+          %!s(*ast.CommentGroup=&{[0xc000168b00 0xc000168b20]})
+          %!s(*ast.CommentGroup=&{[0xc000168c40]})
+          %!s(*ast.CommentGroup=&{[0xc000169620]})
+          %!s(*ast.CommentGroup=&{[0xc000169800]})
+          %!s(*ast.CommentGroup=&{[0xc0001699e0]})
+          %!s(*ast.CommentGroup=&{[0xc000169d00 0xc000169d20]})
+          %!s(*ast.CommentGroup=&{[0xc00016e1c0]})]}
+#+END_SRC
+
 
 * unsorted
 
