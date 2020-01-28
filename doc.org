@@ -850,6 +850,7 @@ SharedObject-а, после чего они оба переходят к пои�
       "go/token"
       "io/ioutil"
       "os"
+      "reflect"
       "strings"
   )
 
@@ -879,9 +880,10 @@ SharedObject-а, после чего они оба переходят к пои�
 
   func main() {
       pathname:= fmt.Sprintf("%s/%s", os.Getenv("GOPATH"), filename)
-      fmt.Printf("\n:: parsing for::['%s']", pathname)
-      parsed, err := ParseFile(pathname, insolar.MachineTypeGoPlugin)
-      fmt.Printf("\n:: <= err: %s \n:: <=parsed: %s", err, parsed)
+      // fmt.Printf("\n:: parsing for::['%s']", pathname)
+      // parsed, err := ParseFile(pathname, insolar.MachineTypeGoPlugin)
+      // fmt.Printf("\n:: <= err: %s \n:: <=parsed: %s", err, parsed)
+      ParseFile(pathname, insolar.MachineTypeGoPlugin)
   }
 
   // ParseFile parses a file as Go source code of a smart contract
@@ -906,7 +908,54 @@ SharedObject-а, после чего они оба переходят к пои�
           return nil, errors.Wrapf(err, "Can't parse %s", fileName)
       }
       res.node = node
-      fmt.Printf("\n:: resource node: %s", res.node)
+
+      //fmt.Printf("\n___Functions:___")
+      //for _, f := range node.Decls {
+      //	fn, ok := f.(*ast.FuncDecl)
+      //	if !ok {
+      //		continue
+      //	}
+      //	fmt.Printf("\n&& %s", fn.Name.Name)
+      //}
+
+      ast.Inspect(node, func(n ast.Node) bool {
+          fn, ok := n.(*ast.FuncDecl)
+          if ok {
+              // Print fn name
+              fmt.Printf("\n\nfn: %s", fn.Name.Name)
+              // Get fn contains
+              fncont := fn.Body.List
+              fmt.Printf("\nfncont (%d): %s", len(fncont), fncont)
+              // Find all Return Statements
+              for _, smth := range fncont {  // ∀ fn.Body.List ← (or RetStmt Inspect)
+                  fmt.Printf("\nsmth: %s", reflect.TypeOf(smth))
+                  retStmt, ok := smth.(*ast.ReturnStmt)
+                  if ok {
+                      for _, ret := range retStmt.Results {
+                          fmt.Printf("\nReturnStmt_1: %s | %s", reflect.TypeOf(ret), ret)
+                      }
+                  } else {
+                      ast.Inspect(smth, func(in ast.Node) bool {
+                          // Find Return Statements
+                          ret, ok := in.(*ast.ReturnStmt) // ←
+                          if ok {
+                              fmt.Printf("\nReturnStmt_2: %s | %s", reflect.TypeOf(ret), ret)
+                          } else {
+                              //fmt.Printf("\nin: %s", reflect.TypeOf(in))
+                          }
+                          return true
+                      })
+                  }
+              }
+              return true
+          } else {
+              return true
+          }
+      })
+
+
+      //fmt.Printf("\n:: resource node: %s", res.node)
+
       //
       //err = res.parseTypes()
       //if err != nil {
