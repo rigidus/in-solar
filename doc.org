@@ -921,25 +921,28 @@ SharedObject-а, после чего они оба переходят к пои�
       ast.Inspect(node, func(n ast.Node) bool {
           fn, ok := n.(*ast.FuncDecl)
           if ok {
-              // Print fn name
+              // Print function name
               fmt.Printf("\n\nfn: %s", fn.Name.Name)
-              // Get fn contains
-              fncont := fn.Body.List
-              fmt.Printf("\nfncont (%d): %s", len(fncont), fncont)
-              // Find all Return Statements
-              for _, smth := range fncont {  // ∀ fn.Body.List ← (or RetStmt Inspect)
+              // Find all Return Statements in function content
+              for _, smth := range fn.Body.List {  // ∀ fn.Body.List ← (or RetStmt (Inspect ...))
                   fmt.Printf("\nsmth: %s", reflect.TypeOf(smth))
                   retStmt, ok := smth.(*ast.ReturnStmt)
                   if ok {
+                      // return from top-level function
                       for _, ret := range retStmt.Results {
-                          fmt.Printf("\nReturnStmt_1: %s | %s", reflect.TypeOf(ret), ret)
+                          //fmt.Printf("\nReturnStmt_1: %s | %s", reflect.TypeOf(ret), ret)
+                          fmt.Printf("\nStringRepresentaton: ['%s']", res.code[ret.Pos()-1:ret.End()-1])
                       }
                   } else {
                       ast.Inspect(smth, func(in ast.Node) bool {
                           // Find Return Statements
-                          ret, ok := in.(*ast.ReturnStmt) // ←
+                          retStmt, ok := in.(*ast.ReturnStmt) // ←
                           if ok {
-                              fmt.Printf("\nReturnStmt_2: %s | %s", reflect.TypeOf(ret), ret)
+                              // return from deep-level function statememt
+                              for _, ret := range retStmt.Results {
+                                  //fmt.Printf("\nReturnStmt_1: %s | %s", reflect.TypeOf(ret), ret)
+                                  fmt.Printf("\nStringRepresentaton: ['%s']", res.code[ret.Pos()-1:ret.End()-1])
+                              }
                           } else {
                               //fmt.Printf("\nin: %s", reflect.TypeOf(in))
                           }
