@@ -843,8 +843,6 @@ SharedObject-а, после чего они оба переходят к пои�
 
   import (
       "fmt"
-      "github.com/insolar/assured-ledger/ledger-core/v2/insolar"
-
       "github.com/pkg/errors"
       "go/ast"
       "go/parser"
@@ -869,21 +867,43 @@ SharedObject-а, после чего они оба переходят к пои�
       Type 	string
   }
 
-  type SelPair struct {
-      Obj 		string
-      Fun			string
+  type Variant struct {
+      Type    int
+      Obj 	string
+      Fun		string
+      Str		string // string representation
   }
 
   const (
-      RetTypeCall = "▷"
+      MistakeType  = 1 + iota
+
+      // type-ids for Variant struct
+      SelectorType
+      StringType
+
+      // type-ids for Ret struct
+      RetTypeCall
   )
 
+  func (v Variant) Show() string {
+      switch v.Type {
+      case MistakeType:
+          return fmt.Sprintf("MistakeType")
+      case SelectorType:
+          return fmt.Sprintf("(. %s %s)", v.Obj, v.Fun)
+      case StringType:
+          return fmt.Sprintf("%s", v.Str)
+      default:
+          return "Impossible Error"
+      }
+  }
+
   type Ret struct {
-      Lvl		string
-      Str 	string
-      Type	string
-      Sel		SelPair
-      Args    []string
+      Lvl  	string
+      Str  	string
+      Type 	int
+      Sel  	Variant
+      Args 	[]Variant
   }
 
   type FnState struct {
@@ -895,48 +915,88 @@ SharedObject-а, после чего они оба переходят к пои�
 
   // ParsedFile struct with prepared info we extract from source code
   type ParsedFile struct {
-      filename             string
-      code                []byte
-      fileSet             *token.FileSet
-      node                *ast.File
-      machineType         insolar.MachineType
-      panicIsLogicalError bool
-
-      states       map[string]*FnState
-
-      types        map[string]*ast.TypeSpec
-      methods      map[string][]*ast.FuncDecl
-      constructors map[string][]*ast.FuncDecl
-      contract     string
+      filename	string
+      code        []byte
+      fileSet     *token.FileSet
+      node        *ast.File
+      states      map[string]*FnState
   }
 
   func main() {
+      dbg := true
       pathname:= fmt.Sprintf("%s/%s", os.Getenv("GOPATH"), filename)
-      // fmt.Printf("\n:: parsing for::['%s']", pathname)
-      // parsed, err := ParseFile(pathname, insolar.MachineTypeGoPlugin)
-      // fmt.Printf("\n:: <= err: %s \n:: <=parsed: %s", err, parsed)
-      ParseFile(pathname, insolar.MachineTypeGoPlugin)
+      pf := ParseFile(pathname)
+      uml := "@startuml"
+      // Debug output
+      if dbg {
+          fmt.Printf("\n:: resource filename: %s", pf.filename)
+      }
+      for _, state := range pf.states {
+          if dbg {
+              fmt.Printf("\n\nfn: %s", state.Name) // Function name
+              fmt.Printf("\nrecv: %s | %s", state.Recv.Name, state.Recv.Type) // Receiver
+              for parName, parType := range state.Pars { // Parameters
+                  fmt.Printf("\npar name: %s | type: %s", parName, parType)
+              }
+          }
+          for _, item := range state.Rets {
+              if dbg {
+                  fmt.Printf("\n%s: ['%s']", item.Lvl, item.Str)
+              }
+              switch item.Type {
+              case RetTypeCall:
+                  switch item.Sel.Fun {
+                  case "Stop":
+                      uml += fmt.Sprintf("\n%s --> [*]", state.Name)
+                  case "Jump":
+                      if 1 == len(state.Rets) && "Top" == item.Lvl { // One Top Level Jmp -> Init
+                          uml += fmt.Sprintf("\n[*] --> %s : %s", item.Args[0].Fun, state.Name)
+                      } else {
+                          uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
+                      }
+                  case "RepeatOrJumpElse":
+                      uml += fmt.Sprintf("\n%s -[#RoyalBlue]-> %s : RepeatOr(Jump)Else", state.Name, item.Args[2].Fun)
+                      uml += fmt.Sprintf("\n%s -[#DarkGreen]-> %s : RepeatOrJump(Else)", state.Name, item.Args[3].Fun)
+                  default:
+                      fmt.Printf("\n(=> (. %s %s)", item.Sel.Obj, item.Sel.Fun)
+                      for _, arg := range item.Args {
+                          fmt.Printf("\n       %s", arg.Show())
+                      }
+                      fmt.Printf(")" )
+                  }
+              default:
+                  fmt.Printf("\nError: Unknown RetType: %d", item.Type)
+              }
+              if dbg {
+                  fmt.Printf("\n(=> (. %s %s)", item.Sel.Obj, item.Sel.Fun)
+                  for _, arg := range item.Args {
+                      fmt.Printf("\n       %s", arg.Show())
+                  }
+                  fmt.Printf(")")
+              }
+          }
+      }
+      uml += "\n@enduml"
+      fmt.Printf("\n\n\n\n\n~~~~~~~~~~~~~~~~~\n%s", uml)
   }
 
   // ParseFile parses a file as Go source code of a smart contract
   // and returns it as `ParsedFile`
-  func ParseFile(fileName string, machineType insolar.MachineType) (*ParsedFile, error) {
+  func ParseFile(fileName string) *ParsedFile {
       pf := &ParsedFile{
           filename:        fileName,
-          machineType: machineType,
       }
-
 
       sourceCode, err := slurpFile(fileName)
       if err != nil {
-          return nil, errors.Wrap(err, "Can't read file")
+          return nil
       }
       pf.code = sourceCode
 
       pf.fileSet = token.NewFileSet()
       node, err := parser.ParseFile(pf.fileSet, pf.filename, pf.code, parser.ParseComments)
       if err != nil {
-          return nil, errors.Wrapf(err, "Can't parse %s", fileName)
+          return nil
       }
       pf.node = node
 
@@ -950,34 +1010,7 @@ SharedObject-а, после чего они оба переходят к пои�
           return true
       })
 
-      // Debug output
-      fmt.Printf("\n:: resource filename: %s", pf.filename)
-      for _, state := range pf.states {
-          fmt.Printf("\n\nfn: %s", state.Name) // Function name
-          fmt.Printf("\nrecv: %s | %s", state.Recv.Name, state.Recv.Type) // Receiver
-          for parName, parType := range state.Pars { // Parameters
-              fmt.Printf("\npar name: %s | type: %s", parName, parType)
-          }
-          for _, item := range state.Rets {
-              fmt.Printf("\n%s: ['%s']", item.Lvl, item.Str)
-              if RetTypeCall == item.Type {
-                  fmt.Printf("\n(=> (. %s %s)", item.Sel.Obj, item.Sel.Fun)
-                  for _, arg := range item.Args {
-                      fmt.Printf("\n       %s", arg)
-                  }
-                  fmt.Printf(")" )
-              }
-          }
-      }
-
-      // TODO: для всех методов, которые имеют хотя бы один Return
-      // TODO: - имеют Returnселектор `smachine'
-      // TODO: - имеют Call, в котором вызывается селектор, по имени совпадающий со входным параметром, который
-      // TODO:   имеет Context-like тип
-      // TODO: собрать выходное ребро и сформироват целевой узел
-      // TODO: если оно указывает на одно States
-
-      return pf, nil
+      return pf
   }
 
   func (pf *ParsedFile) parseMethod(fn *ast.FuncDecl) {
@@ -1061,14 +1094,12 @@ SharedObject-а, после чего они оба переходят к пои�
               Str:	fmt.Sprintf("%s",code[ret.Pos()-1:ret.End()-1]),
           }
           for _, retNode := range retStmt.Results {
-              retNodeStr := fmt.Sprintf("%s", reflect.TypeOf(retNode))
-              switch retNodeStr {
-              case "*ast.CallExpr":
+              switch retNode.(type) {
+              case *ast.CallExpr:
                   item.Type = RetTypeCall
                   retCall := retNode.(*ast.CallExpr)
-                  retSelStr := fmt.Sprintf("%s", reflect.TypeOf(retCall.Fun))
-                  switch retSelStr {
-                  case "*ast.SelectorExpr":
+                  switch retCall.Fun.(type) {
+                  case *ast.SelectorExpr:
                       retSelector := retCall.Fun.(*ast.SelectorExpr)
                       retX, ok := retSelector.X.(*ast.Ident)
                       if ok {
@@ -1078,18 +1109,26 @@ SharedObject-а, после чего они оба переходят к пои�
                       }
                       item.Sel.Fun = retSelector.Sel.Name
                       // Args
-                      accArgs := make([]string, 0)
+                      accArgs := make([]Variant, 0)
                       for _, retarg := range retCall.Args {
-                          retArgTypeStr := fmt.Sprintf("%s", reflect.TypeOf(retarg))
-                          switch retArgTypeStr {
-                          case "*ast.SelectorExpr":
+                          switch retarg.(type) {
+                          case *ast.SelectorExpr:
                               sel := retarg.(*ast.SelectorExpr)
                               selName := fmt.Sprintf("%s", code[sel.X.Pos()-1:sel.X.End()-1])
-                              arg := fmt.Sprintf("(. %s %s)", selName, sel.Sel.Name)
+                              // arg := fmt.Sprintf("(. %s %s)", selName, sel.Sel.Name) // ::::::::::::::::::::::::::::::::::
+                              arg := Variant{
+                                  Type: SelectorType,
+                                  Obj: selName,
+                                  Fun: sel.Sel.Name,
+                              }
                               accArgs = append(accArgs, arg)
-                          case "*ast.Ident":
+                          case *ast.Ident:
                               idn := retarg.(*ast.Ident)
-                              arg := fmt.Sprintf("%s", idn.Name)
+                              //arg := fmt.Sprintf("%s", idn.Name)
+                              arg := Variant{
+                                  Type: StringType,
+                                  Str:  idn.Name,
+                              }
                               accArgs = append(accArgs, arg)
                           default:
                               fmt.Printf("\nERR: UNKNOWN RETARG('%s' of %s)", retarg, reflect.TypeOf(retarg))
@@ -1098,10 +1137,10 @@ SharedObject-а, после чего они оба переходят к пои�
                       //item.Args = append(item.Args, accArgs)
                       item.Args = accArgs
                   default:
-                      fmt.Printf("\nERR: UNKNOWN RETSEL %s", retSelStr)
+                      fmt.Printf("\nERR: UNKNOWN RETSEL %s", fmt.Sprintf("%s", reflect.TypeOf(retCall.Fun)))
                   }
               default:
-                  fmt.Printf("\nERR: UNKNOWN RETNODE %s", retNodeStr)
+                  fmt.Printf("\nERR: UNKNOWN RETNODE %s", fmt.Sprintf("%s", reflect.TypeOf(retNode)))
               }
           }
           acc = append(acc, item)
