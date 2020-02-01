@@ -844,6 +844,7 @@ SharedObject-а, после чего они оба переходят к пои�
   import (
       "fmt"
       "github.com/insolar/assured-ledger/ledger-core/v2/insolar"
+
       "github.com/pkg/errors"
       "go/ast"
       "go/parser"
@@ -886,10 +887,10 @@ SharedObject-а, после чего они оба переходят к пои�
   }
 
   type FnState struct {
-      name 	string
-      recv    *ParPair
-      pars    []*ParPair
-      rets    []string
+      Name 	string
+      Recv    *ParPair
+      Pars    []*ParPair
+      Rets    []*Ret
   }
 
   // ParsedFile struct with prepared info we extract from source code
@@ -901,7 +902,7 @@ SharedObject-а, после чего они оба переходят к пои�
       machineType         insolar.MachineType
       panicIsLogicalError bool
 
-      states       map[string][]FnState
+      states       map[string]*FnState
 
       types        map[string]*ast.TypeSpec
       methods      map[string][]*ast.FuncDecl
@@ -950,60 +951,97 @@ SharedObject-а, после чего они оба переходят к пои�
       return pf, nil
   }
 
-  func (pf *ParsedFile) parseMethod(fn *ast.FuncDecl) error {
+  func (pf *ParsedFile) parseMethod(fn *ast.FuncDecl) {
       // I want to analise only method functions
       for _, fld := range fn.Recv.List {
-          if 1 == len(fld.Names) { // There is method function
 
-              // Receiver
-              recv := &ParPair{
-                  Name : fld.Names[0].Name,
-                  Type : fmt.Sprintf("%s", pf.code[fld.Type.Pos()-1:fld.Type.End()-1]),
+          // I want analyse only method-functions
+          if 1 != len(fld.Names) { // There is method function
+              continue
+          }
+
+          // I want analyse only exported methods
+          if !fn.Name.IsExported() {
+              continue
+          }
+
+          // Receiver
+          recv := &ParPair{
+              Name : fld.Names[0].Name,
+              Type : fmt.Sprintf("%s", pf.code[fld.Type.Pos()-1:fld.Type.End()-1]),
+          }
+
+          // Parameters
+          var pars []*ParPair
+          for _, par := range fn.Type.Params.List {
+              param := &ParPair{ // Receiver
+                  Name : par.Names[0].Name,
+                  Type : fmt.Sprintf("%s", pf.code[par.Type.Pos()-1:par.Type.End()-1]),
               }
+              pars = append(pars, param)
+          }
 
-              // Parameters
-              var pars []*ParPair
-              for _, par := range fn.Type.Params.List {
-                  param := &ParPair{ // Receiver
-                      Name : par.Names[0].Name,
-                      Type : fmt.Sprintf("%s", pf.code[par.Type.Pos()-1:par.Type.End()-1]),
-                  }
-                  pars = append(pars, param)
-              }
+          // I want to analyse only methods, who takes context
+          if !isMethodTakesCtx(pars) {
+              continue
+          }
 
-              // I want to analyse only methods, who receive context
-              if isMethodTakesCtx(pars) {
-                  // Debug prints
-                  fmt.Printf("\n\nfn: %s", fn.Name.Name) // Function name
-                  fmt.Printf("\nrecv: %s | %s", recv.Name, recv.Type) // Receiver
-                  for _, par := range pars { // Parameters
-                      fmt.Printf("\npar name: %s | type: %s", par.Name, par.Type)
-                  }
+          // I want to analyze methods which have a `smashine.StateUpdate' result type
+          res := fn.Type.Results.List[0].Type
+          resSel, ok := res.(*ast.SelectorExpr)
+          if !ok || "StateUpdate" != resSel.Sel.Name {
+              continue
+          }
+          resXstr := fmt.Sprintf("%s", pf.code[resSel.X.Pos()-1:resSel.X.End()-1])
+          if "smachine" != resXstr {
+              continue
+          }
 
-                  // Find all Return Statements in function content
-                  for _, smth := range fn.Body.List {  // ∀ fn.Body.List ← (or RetStmt (Inspect ...))
-                      retStmt, ok := smth.(*ast.ReturnStmt)
+          // Find all Return Statements in function content
+          var rets = make([]*Ret, 0)
+          for _, smth := range fn.Body.List { // ∀ fn.Body.List ← (or RetStmt (Inspect ...))
+              retStmt, ok := smth.(*ast.ReturnStmt)
+              if ok {
+                  // return from top-level statements of function
+                  rets = append(rets, collectRets(retStmt, pf.code, "Top")...)
+              } else {
+                  ast.Inspect(smth, func(in ast.Node) bool {
+                      // Find Return Statements
+                      retStmt, ok := in.(*ast.ReturnStmt) // ←
                       if ok {
-                          // return from top-level statements of function
-                          collectRets(retStmt, pf.code, "Top")
+                          // return from deep-level function statememt
+                          rets = append(rets, collectRets(retStmt, pf.code, "Deep")...)
                       } else {
-                          ast.Inspect(smth, func(in ast.Node) bool {
-                              // Find Return Statements
-                              retStmt, ok := in.(*ast.ReturnStmt) // ←
-                              if ok {
-                                  // return from deep-level function statememt
-                                  collectRets(retStmt, pf.code, "Deep")
-                              } else {
-                                  //fmt.Printf("\nin: %s", reflect.TypeOf(in))
-                              }
-                              return true
-                          })
+                          //fmt.Printf("\nin: %s", reflect.TypeOf(in))
                       }
+                      return true
+                  })
+              }
+          }
+
+          state := FnState{
+              Name: fn.Name.Name,
+              Recv: recv,
+              Pars: pars,
+              Rets: rets,
+          }
+
+          // Debug output
+          fmt.Printf("\n\nfn: %s", state.Name) // Function name
+          fmt.Printf("\nrecv: %s | %s", state.Recv.Name, state.Recv.Type) // Receiver
+          for _, par := range state.Pars { // Parameters
+              fmt.Printf("\npar name: %s | type: %s", par.Name, par.Type)
+          }
+          for _, item := range state.Rets {
+              fmt.Printf("\n%s: ['%s']", item.Lvl, item.Str)
+              if RetTypeCall == item.Type {
+                  fmt.Printf("\n(▷ (@ %s %s))", item.Sel.Obj, item.Sel.Fun)
+                  for _, arg := range item.Args {
+                      fmt.Printf("\n%s", arg)
                   }
               }
           }
       }
-      return nil
   }
 
   func collectRets(retStmt *ast.ReturnStmt, code []byte, level string) []*Ret {
@@ -1057,21 +1095,8 @@ SharedObject-а, после чего они оба переходят к пои�
               default:
                   fmt.Printf("\nERR: UNKNOWN RETNODE %s", retNodeStr)
               }
-
-              //if ok {
-              //
-              //}
           }
           acc = append(acc, item)
-      }
-      for _, item := range acc {
-          fmt.Printf("\n%s: ['%s']", item.Lvl, item.Str)
-          if RetTypeCall == item.Type {
-              fmt.Printf("\n(▷ (@ %s %s))", item.Sel.Obj, item.Sel.Fun)
-              for _, arg := range item.Args {
-                  fmt.Printf("\n%s", arg)
-              }
-          }
       }
       return acc
   }
@@ -1167,29 +1192,6 @@ SharedObject-а, после чего они оба переходят к пои�
       }
 
       return false
-  }
-
-  func (pf *ParsedFile) parseFunctionsAndMethods() error {
-      pf.methods = make(map[string][]*ast.FuncDecl)
-      pf.constructors = make(map[string][]*ast.FuncDecl)
-      for _, decl := range pf.node.Decls {
-          fd, ok := decl.(*ast.FuncDecl)
-          if !ok || !fd.Name.IsExported() {
-              continue
-          }
-
-          var err error
-          if fd.Recv == nil || fd.Recv.NumFields() == 0 {
-              err = pf.parseConstructor(fd)
-          } else {
-              err = pf.parseMethod(fd)
-          }
-          if err != nil {
-              return err
-          }
-      }
-
-      return nil
   }
 
   func (pf *ParsedFile) parseConstructor(fd *ast.FuncDecl) error {
