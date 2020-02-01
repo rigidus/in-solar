@@ -863,16 +863,46 @@ SharedObject-а, после чего они оба переходят к пои�
       MachineTypeGoPlugin
   )
 
+  type ParPair struct {
+      Name 	string
+      Type 	string
+  }
+
+  type SelPair struct {
+      Obj 		string
+      Fun			string
+  }
+
+  const (
+      RetTypeCall = "▷"
+  )
+
+  type Ret struct {
+      Lvl		string
+      Str 	string
+      Type	string
+      Sel		SelPair
+      Args    []string
+  }
+
+  type FnState struct {
+      name 	string
+      recv    *ParPair
+      pars    []*ParPair
+      rets    []string
+  }
+
   // ParsedFile struct with prepared info we extract from source code
   type ParsedFile struct {
-      filename                string
+      filename             string
       code                []byte
       fileSet             *token.FileSet
       node                *ast.File
       machineType         insolar.MachineType
       panicIsLogicalError bool
 
-      //functions    map[string]
+      states       map[string][]FnState
+
       types        map[string]*ast.TypeSpec
       methods      map[string][]*ast.FuncDecl
       constructors map[string][]*ast.FuncDecl
@@ -890,52 +920,178 @@ SharedObject-а, после чего они оба переходят к пои�
   // ParseFile parses a file as Go source code of a smart contract
   // and returns it as `ParsedFile`
   func ParseFile(fileName string, machineType insolar.MachineType) (*ParsedFile, error) {
-      res := &ParsedFile{
+      pf := &ParsedFile{
           filename:        fileName,
           machineType: machineType,
       }
-      fmt.Printf("\n:: resource filename: %s", res.filename)
+      fmt.Printf("\n:: resource filename: %s", pf.filename)
 
       sourceCode, err := slurpFile(fileName)
       if err != nil {
           return nil, errors.Wrap(err, "Can't read file")
       }
-      res.code = sourceCode
-      //fmt.Printf("\n:: resource code: %s", res.code)
+      pf.code = sourceCode
 
-      res.fileSet = token.NewFileSet()
-      node, err := parser.ParseFile(res.fileSet, res.filename, res.code, parser.ParseComments)
+      pf.fileSet = token.NewFileSet()
+      node, err := parser.ParseFile(pf.fileSet, pf.filename, pf.code, parser.ParseComments)
       if err != nil {
           return nil, errors.Wrapf(err, "Can't parse %s", fileName)
       }
-      res.node = node
+      pf.node = node
 
       ast.Inspect(node, func(n ast.Node) bool {
           fn, ok := n.(*ast.FuncDecl)
           if ok {
-              res.parseMethod(fn)
+              pf.parseMethod(fn)  // TODO: return value
           }
           return true
       })
 
+      return pf, nil
+  }
 
-      //fmt.Printf("\n:: resource node: %s", res.node)
+  func (pf *ParsedFile) parseMethod(fn *ast.FuncDecl) error {
+      // I want to analise only method functions
+      for _, fld := range fn.Recv.List {
+          if 1 == len(fld.Names) { // There is method function
 
-      //
-      //err = res.parseTypes()
-      //if err != nil {
-      //	return nil, errors.Wrap(err, "")
-      //}
-      //
-      //err = res.parseFunctionsAndMethods()
-      //if err != nil {
-      //	return nil, errors.Wrap(err, "")
-      //}
-      //if res.contract == "" {
-      //	return nil, errors.New("Only one smart contract must exist")
-      //}
+              // Receiver
+              recv := &ParPair{
+                  Name : fld.Names[0].Name,
+                  Type : fmt.Sprintf("%s", pf.code[fld.Type.Pos()-1:fld.Type.End()-1]),
+              }
 
-      return res, nil
+              // Parameters
+              var pars []*ParPair
+              for _, par := range fn.Type.Params.List {
+                  param := &ParPair{ // Receiver
+                      Name : par.Names[0].Name,
+                      Type : fmt.Sprintf("%s", pf.code[par.Type.Pos()-1:par.Type.End()-1]),
+                  }
+                  pars = append(pars, param)
+              }
+
+              // I want to analyse only methods, who receive context
+              if isMethodTakesCtx(pars) {
+                  // Debug prints
+                  fmt.Printf("\n\nfn: %s", fn.Name.Name) // Function name
+                  fmt.Printf("\nrecv: %s | %s", recv.Name, recv.Type) // Receiver
+                  for _, par := range pars { // Parameters
+                      fmt.Printf("\npar name: %s | type: %s", par.Name, par.Type)
+                  }
+
+                  // Find all Return Statements in function content
+                  for _, smth := range fn.Body.List {  // ∀ fn.Body.List ← (or RetStmt (Inspect ...))
+                      retStmt, ok := smth.(*ast.ReturnStmt)
+                      if ok {
+                          // return from top-level statements of function
+                          collectRets(retStmt, pf.code, "Top")
+                      } else {
+                          ast.Inspect(smth, func(in ast.Node) bool {
+                              // Find Return Statements
+                              retStmt, ok := in.(*ast.ReturnStmt) // ←
+                              if ok {
+                                  // return from deep-level function statememt
+                                  collectRets(retStmt, pf.code, "Deep")
+                              } else {
+                                  //fmt.Printf("\nin: %s", reflect.TypeOf(in))
+                              }
+                              return true
+                          })
+                      }
+                  }
+              }
+          }
+      }
+      return nil
+  }
+
+  func collectRets(retStmt *ast.ReturnStmt, code []byte, level string) []*Ret {
+      var acc []*Ret
+      for _, ret := range retStmt.Results {
+          item := &Ret{
+              Lvl:	level,
+              Str:	fmt.Sprintf("%s",code[ret.Pos()-1:ret.End()-1]),
+          }
+          for _, retNode := range retStmt.Results {
+              retNodeStr := fmt.Sprintf("%s", reflect.TypeOf(retNode))
+              switch retNodeStr {
+              case "*ast.CallExpr":
+                  item.Type = RetTypeCall
+                  retCall := retNode.(*ast.CallExpr)
+                  retSelStr := fmt.Sprintf("%s", reflect.TypeOf(retCall.Fun))
+                  switch retSelStr {
+                  case "*ast.SelectorExpr":
+                      retSelector := retCall.Fun.(*ast.SelectorExpr)
+                      retX, ok := retSelector.X.(*ast.Ident)
+                      if ok {
+                          item.Sel.Obj = retX.Name
+                      } else { // may be not Ident !
+                          fmt.Printf("\nERR: UNKNOWN RETSELECTOR %s", reflect.TypeOf(retSelector.X))
+                      }
+                      item.Sel.Fun = retSelector.Sel.Name
+                      // Args
+                      accArgs := make([]string, 0)
+                      for _, retarg := range retCall.Args {
+                          retArgTypeStr := fmt.Sprintf("%s", reflect.TypeOf(retarg))
+                          switch retArgTypeStr {
+                          case "*ast.SelectorExpr":
+                              sel := retarg.(*ast.SelectorExpr)
+                              selName := fmt.Sprintf("%s", code[sel.X.Pos()-1:sel.X.End()-1])
+                              arg := fmt.Sprintf("    (@ %s %s)", selName, sel.Sel.Name)
+                              accArgs = append(accArgs, arg)
+                          case "*ast.Ident":
+                              idn := retarg.(*ast.Ident)
+                              arg := fmt.Sprintf("    %s", idn.Name)
+                              accArgs = append(accArgs, arg)
+                          default:
+                              fmt.Printf("\nERR: UNKNOWN RETARG('%s' of %s)", retarg, reflect.TypeOf(retarg))
+                          }
+                      }
+                      //item.Args = append(item.Args, accArgs)
+                      item.Args = accArgs
+                      fmt.Printf(")", )
+                  default:
+                      fmt.Printf("\nERR: UNKNOWN RETSEL %s", retSelStr)
+                  }
+              default:
+                  fmt.Printf("\nERR: UNKNOWN RETNODE %s", retNodeStr)
+              }
+
+              //if ok {
+              //
+              //}
+          }
+          acc = append(acc, item)
+      }
+      for _, item := range acc {
+          fmt.Printf("\n%s: ['%s']", item.Lvl, item.Str)
+          if RetTypeCall == item.Type {
+              fmt.Printf("\n(▷ (@ %s %s))", item.Sel.Obj, item.Sel.Fun)
+              for _, arg := range item.Args {
+                  fmt.Printf("\n%s", arg)
+              }
+          }
+      }
+      return acc
+  }
+
+  //func processSelector (selector *ast.Expr) {
+  //	//selector, ok := exp.Fun.(*ast.SelectorExpr)
+  //	retX, ok := selector.X.(*ast.Ident)
+  //	if ok {
+  //		fmt.Printf("(@ %s", retX.Name)
+  //	}
+  //
+  //}
+
+  func isMethodTakesCtx(pars []*ParPair) bool {
+      for _, par := range pars {
+          if strings.Contains(par.Type, "Context") {
+              return true
+          }
+      }
+      return false
   }
 
   func slurpFile(fileName string) ([]byte, error) {
@@ -1036,7 +1192,6 @@ SharedObject-а, после чего они оба переходят к пои�
       return nil
   }
 
-
   func (pf *ParsedFile) parseConstructor(fd *ast.FuncDecl) error {
       name := fd.Name.Name
       if !strings.HasPrefix(name, "New") {
@@ -1056,78 +1211,6 @@ SharedObject-а, после чего они оба переходят к пои�
       typename := pf.typeName(res.List[0].Type)
       pf.constructors[typename] = append(pf.constructors[typename], fd)
 
-      return nil
-  }
-
-
-  func (pf *ParsedFile) parseMethod(fn *ast.FuncDecl) error {
-      // I want analise only method functions
-      for _, fld := range fn.Recv.List {
-          if 1 == len(fld.Names) { // There is method function
-
-              // Function name
-              fmt.Printf("\n\nfn: %s", fn.Name.Name)
-
-              // Receiver
-              fmt.Printf("\nrecv: %s", fld.Names)
-              fmt.Printf(" type: %s", pf.code[fld.Type.Pos()-1:fld.Type.End()-1])
-
-              // Parameters
-              for _, par := range fn.Type.Params.List {
-                  fmt.Printf("\npar name: %s", par.Names)
-                  fmt.Printf("\npar type: %s", pf.code[par.Type.Pos()-1:par.Type.End()-1])
-              }
-
-              // Find all Return Statements in function content
-              for _, smth := range fn.Body.List {  // ∀ fn.Body.List ← (or RetStmt (Inspect ...))
-                  fmt.Printf("\nsmth: %s", reflect.TypeOf(smth))
-                  retStmt, ok := smth.(*ast.ReturnStmt)
-                  if ok {
-                      // return from top-level statements of function
-                      for _, ret := range retStmt.Results {
-                          //fmt.Printf("\nReturnStmt_1: %s | %s", reflect.TypeOf(ret), ret)
-                          fmt.Printf("\nRetStringRepresentaton: ['%s']", pf.code[ret.Pos()-1:ret.End()-1])
-                      }
-                  } else {
-                      ast.Inspect(smth, func(in ast.Node) bool {
-                          // Find Return Statements
-                          retStmt, ok := in.(*ast.ReturnStmt) // ←
-                          if ok {
-                              // return from deep-level function statememt
-                              for _, ret := range retStmt.Results {
-                                  //fmt.Printf("\nReturnStmt_1: %s | %s", reflect.TypeOf(ret), ret)
-                                  fmt.Printf("\nRetStringRepresentaton: ['%s']", pf.code[ret.Pos()-1:ret.End()-1])
-                              }
-                          } else {
-                              //fmt.Printf("\nin: %s", reflect.TypeOf(in))
-                          }
-                          return true
-                      })
-                  }
-              }
-
-          } else { // There is not method function - skip it
-              return nil
-          }
-      }
-
-      /*
-      res := fd.Type.Results
-      if res.NumFields() < 1 {
-          return errors.Errorf("Method %q should return at least one result (error)", name)
-      }
-
-      lastResType := pf.typeName(res.List[res.NumFields()-1].Type)
-      if lastResType != errorType {
-          return errors.Errorf(
-              "Method %q should return 'error' as last value, but it's %q",
-              name, lastResType,
-          )
-      }
-
-      typename := pf.typeName(fd.Recv.List[0].Type)
-      pf.methods[typename] = append(pf.methods[typename], fd)
-      ,*/
       return nil
   }
 
