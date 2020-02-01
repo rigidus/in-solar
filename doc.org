@@ -864,7 +864,7 @@ SharedObject-а, после чего они оба переходят к пои�
       MachineTypeGoPlugin
   )
 
-  type ParPair struct {
+  type RecvPair struct {
       Name 	string
       Type 	string
   }
@@ -888,8 +888,8 @@ SharedObject-а, после чего они оба переходят к пои�
 
   type FnState struct {
       Name 	string
-      Recv    *ParPair
-      Pars    []*ParPair
+      Recv    *RecvPair
+      Pars    map[string]string // k:name, v:type
       Rets    []*Ret
   }
 
@@ -925,7 +925,7 @@ SharedObject-а, после чего они оба переходят к пои�
           filename:        fileName,
           machineType: machineType,
       }
-      fmt.Printf("\n:: resource filename: %s", pf.filename)
+
 
       sourceCode, err := slurpFile(fileName)
       if err != nil {
@@ -940,6 +940,8 @@ SharedObject-а, после чего они оба переходят к пои�
       }
       pf.node = node
 
+      pf.states = make(map[string]*FnState)
+
       ast.Inspect(node, func(n ast.Node) bool {
           fn, ok := n.(*ast.FuncDecl)
           if ok {
@@ -947,6 +949,33 @@ SharedObject-а, после чего они оба переходят к пои�
           }
           return true
       })
+
+      // Debug output
+      fmt.Printf("\n:: resource filename: %s", pf.filename)
+      for _, state := range pf.states {
+          fmt.Printf("\n\nfn: %s", state.Name) // Function name
+          fmt.Printf("\nrecv: %s | %s", state.Recv.Name, state.Recv.Type) // Receiver
+          for parName, parType := range state.Pars { // Parameters
+              fmt.Printf("\npar name: %s | type: %s", parName, parType)
+          }
+          for _, item := range state.Rets {
+              fmt.Printf("\n%s: ['%s']", item.Lvl, item.Str)
+              if RetTypeCall == item.Type {
+                  fmt.Printf("\n(=> (. %s %s)", item.Sel.Obj, item.Sel.Fun)
+                  for _, arg := range item.Args {
+                      fmt.Printf("\n       %s", arg)
+                  }
+                  fmt.Printf(")" )
+              }
+          }
+      }
+
+      // TODO: для всех методов, которые имеют хотя бы один Return
+      // TODO: - имеют Returnселектор `smachine'
+      // TODO: - имеют Call, в котором вызывается селектор, по имени совпадающий со входным параметром, который
+      // TODO:   имеет Context-like тип
+      // TODO: собрать выходное ребро и сформироват целевой узел
+      // TODO: если оно указывает на одно States
 
       return pf, nil
   }
@@ -966,19 +995,15 @@ SharedObject-а, после чего они оба переходят к пои�
           }
 
           // Receiver
-          recv := &ParPair{
+          recv := &RecvPair{
               Name : fld.Names[0].Name,
               Type : fmt.Sprintf("%s", pf.code[fld.Type.Pos()-1:fld.Type.End()-1]),
           }
 
           // Parameters
-          var pars []*ParPair
+          pars := make(map[string]string, 0)
           for _, par := range fn.Type.Params.List {
-              param := &ParPair{ // Receiver
-                  Name : par.Names[0].Name,
-                  Type : fmt.Sprintf("%s", pf.code[par.Type.Pos()-1:par.Type.End()-1]),
-              }
-              pars = append(pars, param)
+              pars[par.Names[0].Name] = fmt.Sprintf("%s", pf.code[par.Type.Pos()-1:par.Type.End()-1])
           }
 
           // I want to analyse only methods, who takes context
@@ -1019,27 +1044,11 @@ SharedObject-а, после чего они оба переходят к пои�
               }
           }
 
-          state := FnState{
+          pf.states[fn.Name.Name] = &FnState{
               Name: fn.Name.Name,
               Recv: recv,
               Pars: pars,
               Rets: rets,
-          }
-
-          // Debug output
-          fmt.Printf("\n\nfn: %s", state.Name) // Function name
-          fmt.Printf("\nrecv: %s | %s", state.Recv.Name, state.Recv.Type) // Receiver
-          for _, par := range state.Pars { // Parameters
-              fmt.Printf("\npar name: %s | type: %s", par.Name, par.Type)
-          }
-          for _, item := range state.Rets {
-              fmt.Printf("\n%s: ['%s']", item.Lvl, item.Str)
-              if RetTypeCall == item.Type {
-                  fmt.Printf("\n(▷ (@ %s %s))", item.Sel.Obj, item.Sel.Fun)
-                  for _, arg := range item.Args {
-                      fmt.Printf("\n%s", arg)
-                  }
-              }
           }
       }
   }
@@ -1076,11 +1085,11 @@ SharedObject-а, после чего они оба переходят к пои�
                           case "*ast.SelectorExpr":
                               sel := retarg.(*ast.SelectorExpr)
                               selName := fmt.Sprintf("%s", code[sel.X.Pos()-1:sel.X.End()-1])
-                              arg := fmt.Sprintf("    (@ %s %s)", selName, sel.Sel.Name)
+                              arg := fmt.Sprintf("(. %s %s)", selName, sel.Sel.Name)
                               accArgs = append(accArgs, arg)
                           case "*ast.Ident":
                               idn := retarg.(*ast.Ident)
-                              arg := fmt.Sprintf("    %s", idn.Name)
+                              arg := fmt.Sprintf("%s", idn.Name)
                               accArgs = append(accArgs, arg)
                           default:
                               fmt.Printf("\nERR: UNKNOWN RETARG('%s' of %s)", retarg, reflect.TypeOf(retarg))
@@ -1088,7 +1097,6 @@ SharedObject-а, после чего они оба переходят к пои�
                       }
                       //item.Args = append(item.Args, accArgs)
                       item.Args = accArgs
-                      fmt.Printf(")", )
                   default:
                       fmt.Printf("\nERR: UNKNOWN RETSEL %s", retSelStr)
                   }
@@ -1101,18 +1109,9 @@ SharedObject-а, после чего они оба переходят к пои�
       return acc
   }
 
-  //func processSelector (selector *ast.Expr) {
-  //	//selector, ok := exp.Fun.(*ast.SelectorExpr)
-  //	retX, ok := selector.X.(*ast.Ident)
-  //	if ok {
-  //		fmt.Printf("(@ %s", retX.Name)
-  //	}
-  //
-  //}
-
-  func isMethodTakesCtx(pars []*ParPair) bool {
-      for _, par := range pars {
-          if strings.Contains(par.Type, "Context") {
+  func isMethodTakesCtx(pars map[string]string) bool {
+      for _, parType := range pars {
+          if strings.Contains(parType, "Context") {
               return true
           }
       }
@@ -1131,101 +1130,6 @@ SharedObject-а, после чего они оба переходят к пои�
           return nil, errors.Wrap(err, "Can't read file '"+fileName+"'")
       }
       return res, nil
-  }
-
-  func (pf *ParsedFile) parseTypes() error {
-      pf.types = make(map[string]*ast.TypeSpec)
-      for _, decl := range pf.node.Decls {
-          tDecl, ok := decl.(*ast.GenDecl)
-          if !ok || tDecl.Tok != token.TYPE {
-              continue
-          }
-
-          for _, e := range tDecl.Specs {
-              typeNode := e.(*ast.TypeSpec)
-
-              err := pf.parseTypeSpec(typeNode)
-              if err != nil {
-                  return err
-              }
-          }
-      }
-
-      return nil
-  }
-
-  func (pf *ParsedFile) parseTypeSpec(typeSpec *ast.TypeSpec) error {
-      if isContractTypeSpec(typeSpec) {
-          if pf.contract != "" {
-              return errors.New("more than one contract in a file")
-          }
-          pf.contract = typeSpec.Name.Name
-      } else {
-          pf.types[typeSpec.Name.Name] = typeSpec
-      }
-
-      return nil
-  }
-
-  func isContractTypeSpec(typeNode *ast.TypeSpec) bool {
-      baseContract := "foundation.BaseContract"
-      st, ok := typeNode.Type.(*ast.StructType)
-      if !ok {
-          return false
-      }
-      if st.Fields == nil || st.Fields.NumFields() == 0 {
-          return false
-      }
-      for _, fd := range st.Fields.List {
-          if len(fd.Names) != 0 {
-              continue // named struct field
-          }
-          selectField, ok := fd.Type.(*ast.SelectorExpr)
-          if !ok {
-              continue
-          }
-          pack := selectField.X.(*ast.Ident).Name
-          class := selectField.Sel.Name
-          if baseContract == (pack + "." + class) {
-              return true
-          }
-      }
-
-      return false
-  }
-
-  func (pf *ParsedFile) parseConstructor(fd *ast.FuncDecl) error {
-      name := fd.Name.Name
-      if !strings.HasPrefix(name, "New") {
-          return nil // doesn't look like a constructor
-      }
-
-      res := fd.Type.Results
-
-      if res.NumFields() != 2 {
-          return errors.Errorf("Constructor %q should return exactly two values", name)
-      }
-
-      if pf.typeName(res.List[1].Type) != errorType {
-          return errors.Errorf("Constructor %q should return 'error'", name)
-      }
-
-      typename := pf.typeName(res.List[0].Type)
-      pf.constructors[typename] = append(pf.constructors[typename], fd)
-
-      return nil
-  }
-
-  func (pf *ParsedFile) typeName(t ast.Expr) string {
-      if tmp, ok := t.(*ast.StarExpr); ok { // *type
-          t = tmp.X
-      }
-      return pf.codeOfNode(t)
-  }
-
-  // codeOfNode returns source code of an AST node
-  func (pf *ParsedFile) codeOfNode(n ast.Node) string {
-      return string(pf.code[n.Pos()-1 : n.End()-1])
   }
 #+END_SRC
 
