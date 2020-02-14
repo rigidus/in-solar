@@ -88,8 +88,6 @@
 пинг-понга
 
 *** PinPong
-
-
 *** Transfer
 
 Инициатором перевода денег является пользователь. Чтобы сделать перевод
@@ -952,23 +950,11 @@ SharedObject-а, после чего они оба переходят к пои�
                   case "Stop":
                       uml += fmt.Sprintf("\n%s --> [*]", state.Name)
                   case "Jump":
-                      if 1 == len(state.Rets) && "Top" == item.Lvl { // One Top Level Jmp -> Init
-                          uml += fmt.Sprintf("\n[*] --> %s : %s", item.Args[0].Fun, state.Name)
-                      } else {
-                          uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
-                      }
+                      uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
                   case "ThenJump":
-                      if 1 == len(state.Rets) && "Top" == item.Lvl { // One Top Level Jmp -> Init
-                          uml += fmt.Sprintf("\n[*] --> %s : %s", item.Args[0].Fun, state.Name)
-                      } else {
-                          uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
-                      }
+                      uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
                   case "JumpExt":
-                      if 1 == len(state.Rets) && "Top" == item.Lvl { // One Top Level Jmp -> Init
-                          uml += fmt.Sprintf("\n[*] --> %s : %s", item.Args[0].Fun, state.Name)
-                      } else {
                           uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
-                      }
                   case "ThenRepeat":
                       uml += fmt.Sprintf("\n%s --> %s : ThenRepeat", state.Name, state.Name)
                   case "RepeatOrJumpElse":
@@ -1046,7 +1032,9 @@ SharedObject-а, после чего они оба переходят к пои�
 
               // I want analyse only method-functions
               if 1 != len(fld.Names) { // There is method function
-                  if pf.dbg { fmt.Printf("\n:parseMethod: skip %s - No method function", fn.Name.Name) }
+                  if pf.dbg {
+                      //fmt.Printf("\n:parseMethod: skip %s - No method function", fn.Name.Name)
+                  }
                   continue
               }
 
@@ -1102,7 +1090,7 @@ SharedObject-а, после чего они оба переходят к пои�
               }
 
               // Show name (debug)
-              fmt.Printf("\n:parseMethod: (name dbg) %s", fn.Name.Name)
+              //fmt.Printf("\n:parseMethod: (name dbg) %s", fn.Name.Name)
 
               // Find all Return Statements in function content
               var rets = make([]*Ret, 0)
@@ -1144,6 +1132,7 @@ SharedObject-а, после чего они оба переходят к пои�
               Str:	fmt.Sprintf("%s",code[ret.Pos()-1:ret.End()-1]),
           }
           for _, retNode := range retStmt.Results {
+              /// fmt.Printf("\n :collectRet: (dbg type of retNode) %s",  reflect.TypeOf(retNode))
               switch retNode.(type) {
               case *ast.CallExpr:
                   item.Type = RetTypeCall
@@ -1152,10 +1141,12 @@ SharedObject-а, после чего они оба переходят к пои�
                   case *ast.SelectorExpr:
                       retSelector := retCall.Fun.(*ast.SelectorExpr)
                       item.Var.Fun = retSelector.Sel.Name
+                      /// fmt.Printf("\n  :collectRet: (Selector) (%s.) =:[%s]:=", reflect.TypeOf(retSelector.X), retSelector.Sel.Name)
                       switch retSelector.X.(type) { // Analyse started from [selector.*]
                       case *ast.Ident:
                           retX := retSelector.X.(*ast.Ident)
                           item.Var.Obj = retX.Name
+                          /// fmt.Printf("\n   :collectRet: (%s.)", item.Var.Obj)
                           switch item.Var.Fun {
                           case "Jump":
                           case "Stop":
@@ -1168,7 +1159,8 @@ SharedObject-а, после чего они оба переходят к пои�
                           subX := retSelector.X.(*ast.CallExpr)
                           subXStr := fmt.Sprintf("%s", code[subX.Pos()-1:subX.End()-1])
                           item.Var.Obj = subXStr
-                          switch item.Var.Fun {
+                          /// fmt.Printf("\n   :collectRet: (call to selector) (%s.)", item.Var.Obj)
+                          switch item.Var.Fun { // Check Fun (nb: not arg!)
                           case "ThenRepeat":
                           case "ThenJump":
                           default:
@@ -1185,10 +1177,12 @@ SharedObject-а, после чего они оба переходят к пои�
                       // Args
                       accArgs := make([]Variant, 0)
                       for _, retarg := range retCall.Args {
+                          /// fmt.Printf("\n   -:collectRet: arg type [%s]", reflect.TypeOf(retarg))
                           switch retarg.(type) {
                           case *ast.SelectorExpr:
                               sel := retarg.(*ast.SelectorExpr)
                               selName := fmt.Sprintf("%s", code[sel.X.Pos()-1:sel.X.End()-1])
+                              /// fmt.Printf("\n   -|[%s] %s .|. %s", reflect.TypeOf(sel), selName, sel.Sel.Name)
                               arg := Variant{
                                   Type: SelectorType,
                                   Obj: selName,
@@ -1197,13 +1191,14 @@ SharedObject-а, после чего они оба переходят к пои�
                               accArgs = append(accArgs, arg)
                           case *ast.Ident:
                               idn := retarg.(*ast.Ident)
+                              /// fmt.Printf("\n   -|[%s] %s", reflect.TypeOf(idn), idn.Name)
                               //arg := fmt.Sprintf("%s", idn.Name)
                               arg := Variant{
                                   Type: StringType,
                                   Str:  idn.Name,
                               }
                               accArgs = append(accArgs, arg)
-                          case *ast.CompositeLit: /// THERE IS BUGS !!! [TODO]
+                          case *ast.CompositeLit:
                               cl := retarg.(*ast.CompositeLit)
                               // We know only JumpExt composite literal
                               arg := Variant{}
@@ -1219,6 +1214,7 @@ SharedObject-а, после чего они оба переходят к пои�
                                                   Obj: selName,
                                                   Fun: sel.Sel.Name,
                                               }
+                                              /// fmt.Printf("\n   -| %s.%s", selName, sel.Sel.Name)
                                           }
                                       }
                                       return true
