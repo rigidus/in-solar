@@ -1,12 +1,22 @@
 #+STARTUP: showall indent hidestars
+#+SETUPFILE: https://raw.githubusercontent.com/fniessen/org-html-themes/master/setup/theme-readtheorg.setup
+
+* Intro
+
+Insolar - Это распределенный компьютер, использующий в качестве системы
+хранения распределенный реестр.
+
+Чтобы облегчить процесс понимания того как это все работает, я написал
+эту "краткую, неполную, и местами неверную схема работы.
+
+Я надеюсь, она пригодиться для вводных объяснений в процессе онбординга,
+отсылок в ходе различеных дискуссий и "связывания концов".
 
 * Overview
 
-Краткая, неполная, и местами неверная схема работы Insolar,
-предназначенная для вводных объяснений и "связывания концов".
-
-Логичнее всего объяснять как все работает путем отслеживания прохождения
-простого запроса (например на трансфер), но это невозможно без понимания
+Логичнее всего начать объяснение с пути отслеживания прохождения
+простого запроса, выбрав какой-нибудь типичный сценарий использования,
+например - трансфер. Но это невозможно без понимания
 некоторых концепций работы сети, поэтому придется сделать шаг назад и...
 
 ...узнать что сеть Insolar состоит из ~Нод~ и в своей работе опирается на
@@ -15,9 +25,11 @@
 ~Нода~  - это компьютер в сети, который выполняет для сети какую-то
 работу в соответствии со своей ~Ролью~.
 
-~Роль~ - это то какую работу нода делает делает для сети. Иногда роль
+~Роль~ - это то какую работу Нода делает делает для сети. Иногда роль
 ноды может измениться, тогда она начинает делать другую
-работу. Существует [TODO:gmm] - Список всех ролей.
+работу. Существует cписок всех ролей, где описаны эти
+работы: [[*Node Roles][Node Roles]]
+
 
 ~Пульс~ - это некоторый временной отрезок, в течении которого набор нод,
 (которые исполняют свои ~Роли~) остается постоянным.
@@ -28,9 +40,11 @@
 очередной ~Пульс~ не придет - то вся сеть остановится. [TODO:gmm] - Может
 нет? Также новый Пульс содержит энтропию, в соответствии с которой в
 новом пульсе будут переназначены ~Ноды~ на выполнение ~Ролей~ - это нужно
-для сменяемости нод.  Подробнее: [TODO:gmm] - Работа пульсаров.
+для сменяемости Нод. Подробнее: [TODO:gmm] - Работа пульсаров.
 
-Результатом их работы становится [TODO:gmm] - Сообщение о пульсе, которое
+[TODO:gmm] - Зачем нужно менять роли?
+
+Результатом их работы становится [TODO:gmm] - "Сообщение о пульсе", которое
 распространяется по сети [TODO:gmm] - Как и кем?
 
 Когда ноды получают это сообщение, они прекращают ту работу, которой
@@ -43,8 +57,8 @@
 
 ** Transfer
 
-Мы будем рассматривать (простой) запрос о переводе денег от одного
-пользователя к другому.
+Мы будем в качестве примера рассматривать (простой) запрос о переводе
+денег от одного пользователя к другому.
 
 Он начинается с (мобильного) приложения пользователя, которое формирует
 запрос и подписывает его ключом пользователя.
@@ -55,30 +69,157 @@
 поддерживается NodeList?
 
 ~BorderContract~ - это контракт, который может выполнить любая нода сети,
-независимо от того имеет ли она ли она роль ~VirtuelExecutor~ в текущем
-пульсе или нет.
+независимо от того имеет ли она ли она роль ~VirtualExecutor~ в текущем
+пульсе или нет. У ~BorderContract~-ов есть своя внутренняя машинерия,
+нацеленная на то чтобы все ноды, которые могут принять API-запрос знали о
+~BorderContract~-ах. Она описана в [[*BorderContracts][BorderContracts]] и
+https://insolar.atlassian.net/wiki/spaces/DEV/pages/1009287169/Core+v2+-+VN+-+Custom+APIs
 
 Задачи ~BorderContract~:
 - проверить подпись запроса
 - зарегистрировать запрос пользователя на ~Ledger~ (чтобы не потерялся),
 - отправить пользователю подтверждение об этом
-- найти нужный контракт, т.е. ~TransferContract~, определить его адрес
-- и вызвать его
+- найти нужный целевой контракт, определить его адрес
+- и вызвать его на Ноде, которая в текущем пульсе является ~VirtualExecutor~-ом.
 
 - [TODO:gmm] - Как регистрируется запрос на ~Ledger~-е?
 - [TODO:gmm] - Формат подтверждения и подписывается ли оно
 - [TODO:gmm] - Как найти нужный контракт? - процедура
 - [TODO:gmm] - Как происходит вызов контракта?
 
-Я предполагаю, что проверка подписи - затратное мероприятие по сравнению
-с формированием запроса, поэтому вредоносные приложения могут спамить
-ноды запросами с целью нарушить их работу. Поэтому было бы правильно
-уравновесить вычислительные затраты на формирование запроса чтобы
-избежать этого вектора атаки. Но пока это не сделано.
+[COMMENT:gmm] Я предполагаю, что проверка подписи - затратное мероприятие
+по сравнению с формированием запроса, поэтому вредоносные приложения
+могут спамить ноды запросами с целью нарушить их работу. Поэтому было бы
+правильно уравновесить вычислительные затраты на формирование запроса
+чтобы избежать этого вектора атаки.
 
 * Compontents of Platform
+** Platform Core
+*** Network
+**** Node Roles
+
+[TODO:gmm] - Раскрыть подробнее Node Roles
+
+- Executors
+  - Virtual Executor (VE)
+  - Virtual Validator (VV)-
+ Storage
+  - Light Material (LM)
+  - Heavy Material (HM)
+- Pulsar
+
+*** BorderContracts
+
+#+NAME:
+#+BEGIN_SRC plantuml :file ../img/uml-border-contract.png
+  @startuml
+  participant C as "RPC Client" order 10
+  participant S as "RPC Server" order 20
+  participant V as "Virtual Node" order 30
+  == Pulse change ==
+  S <- : CommitPulse(PN)
+  S -> S : SeqN = FirstSeqN = Rand.UInt()\nmapSecrets[PN] = SecretN = Rand.UInt()
+  ...
+  C -> S : getSeed()
+  activate S
+  S -> S : seed = [PN, SeqN, hash(PK, SeqN, mapSecrets[PN])]\nmapSeeds[PN][SeqN]=1\nSeqN++
+  S -> C : seed
+  deactivate S
+  note right of S
+  To keep seeds:
+  - PN, FirstSeqN, SecretN
+  - bitmap[# of SeqN]
+  => ~13kB per 100k seeds
+  end note
+  note right of S
+  NB! Seed generation & load balancig can be done
+  on a separate server. Then the seed should be
+  extended by adding [mapSecrets[PN], FirstSeqN]
+  encrypted by target's PK.
+  end note
+  ...
+  C -> S : apiCall(payload[seed, endpoint, callSite])
+  activate S
+  S -> S : assert(mapSeed[seed.PN][seed.SeqN]==1)\nassert(seed.hash == hash(PK, seed.SeqN, mapSecrets[seed.PN])\nmapSeed[seed.PN][seed.SeqN]=0
+  V \-> S : facade = getEndpointFacade(endpoint) // cacheable
+  S -> S : facade.preValidatePayload(payload)
+  V \-> S : slotId := conveyor.AddInput(incomingExternal, payload, validation)
+  S -> C : queueId = [PN, slotID, hash(payload)]
+  note right of C
+  Can also include sign(PK(VN), hash(queueId)) to prevent MitM
+  end note
+  deactivate S
+  activate V
+  note right of V
+  SM for the request
+  end note
+  V -> V : identity = validateIdentity(payload) // can call e.g. Kerberos
+  V -> : extCallRef = registerExternalIncoming(payload) + \nregisterImpersonatedOutgoing(payload, identity)
+  ...
+  V ->x V : stop
+  deactivate V
+  S \-> C : (get a new seed)\nstatus = apiCallStatus(payload[new_seed, queueId])
+  note right of S
+  apiCallStatus will reject too old PNs, then it goes into 4 ways:
+  1. (current PN) will look for an SM by slotID
+  2. (past PN) will look for an SM, then in a special cache by slotID
+  3. (antique PN) will create a special SM to find a registration record by [PN, hash(payload)]
+  end note
+  @enduml
+#+END_SRC
+
+#+results:
+[[file:../img/uml-border-contract.png]]
+
+** Ledger
+** Virtual Machines
+** Smart Contracts
+** Platform API
+** Observer
+** Business Foundation
+** Application
 * Deployment
+
+- [TODO:gmm] - Как развернуть сеть с нуля
+- [TODO:gmm] - Как протестировать что-то на развернутой сети
+- [TODO:gmm] - Как обновлять
+https://insolar.atlassian.net/wiki/spaces/DEV/pages/1038221313/WIP+Insolar+Kubernetes+Deploy+Design
+
 * Testing
 * Questioons
 
 - Что такое AppController
+
+Example of GoLang-code
+
+#+NAME:
+#+BEGIN_SRC go
+    package main
+
+    import (
+        "fmt"
+        "github.com/pkg/errors"
+        "go/ast"
+        "go/parser"
+        "go/token"
+        "io/ioutil"
+        "os"
+        "reflect"
+        "strings"
+    )
+
+    const (
+        TemplateDirectory = "templates"
+
+        //filename = "src/github.com/insolar/assured-ledger/ledger-core/v2/conveyor/smachine/ping-pong/example/example_3.go"
+        filename = "src/github.com/insolar/assured-ledger/ledger-core/v2/logicrunner/sm_object/object.go"
+        mainPkg   = "main"
+        errorType = "error"
+        MachineTypeGoPlugin
+    )
+
+    type RecvPair struct {
+        Name 	string
+        Type 	string
+    }
+#+END_SRC
