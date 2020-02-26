@@ -51,7 +51,7 @@ Insolar - Это распределенный компьютер, использ
 занимались согласно выделенной роли, и начинают [TODO:gmm] - Cмену пульса
 
 Теперь когда мы имеем представление о пульсах, можно рассмотреть как
-исполняется запрос от пользователя.
+исполняется запрос.
 
 * Use-cases
 
@@ -68,11 +68,12 @@ Insolar - Это распределенный компьютер, использ
 [TODO:gmm] - Как приложение узнает о нодах сети и их адресах? Как
 поддерживается NodeList?
 
-~BorderContract~ - это контракт, который может выполнить любая нода сети,
-независимо от того имеет ли она ли она роль ~VirtualExecutor~ в текущем
-пульсе или нет. У ~BorderContract~-ов есть своя внутренняя машинерия,
-нацеленная на то чтобы все ноды, которые могут принять API-запрос знали о
-~BorderContract~-ах. Она описана в [[*BorderContracts][BorderContracts]] и
+~BorderContract~ - это контракт, который может выполнить любая
+исполняющая код нода сети , независимо от того имеет ли она ли она роль
+~VirtualExecutor~ в текущем пульсе или нет. У ~BorderContract~-ов есть
+своя внутренняя машинерия, нацеленная на то чтобы все ноды, которые могут
+принять API-запрос знали о ~BorderContract~-ах. Она описана в
+[[*BorderContracts][BorderContracts]] и
 https://insolar.atlassian.net/wiki/spaces/DEV/pages/1009287169/Core+v2+-+VN+-+Custom+APIs
 
 Задачи ~BorderContract~:
@@ -93,6 +94,48 @@ https://insolar.atlassian.net/wiki/spaces/DEV/pages/1009287169/Core+v2+-+VN+-+Cu
 правильно уравновесить вычислительные затраты на формирование запроса
 чтобы избежать этого вектора атаки.
 
+
+Далее запрос попадает на Ноду, которая является VirtualExecutor-ом
+данного контракта в этом Пульсе. Любая Нода, зная текущий Пульс и объект,
+метод которого вызывается, может вычислить ~VirtualExecutor~ по известной
+функции [TODO:gmm] - Функция вычисления VE
+https://insolar.atlassian.net/wiki/spaces/DEV/pages/826212449/2019-06-18+-+06-21+Request+s+Journey+on+the+Insolar+Network
+
+~VirtualExecutor~ выполняет контракт. В процессе работы может возникнуть
+необходимость сохранить/изменить данные. Тогда ~VirtualExecutor~ создает,
+подписывает и посылает ~Record~ на ~Matherial Node~ ([TODO:gmm] - Light
+или Heavy?)
+
+~Record~ - это некоторый набор данных, адресуемый через свой ~hash~ и
+номер ~Пульса~. Он также может содержать ссылку на другой ~Record~
+объединяясь, таким образом, в цепочку. Пример такой цепочки является
+~Object~.
+
+~Object~ - это экземпляр ~Смарт-контракта~. Он состоит из записей, каждая
+из которых представляет его состояние в какой-то временной точке.
+
+~Matherial Node~ выполняет хранение данных, так как они подписаны, они
+неизменны и иммутабельны, однако [TODO:gmm] - что будет если хранилище не
+запишет, посланные ему ~Record~-ы?
+
+~Lifeline~ - это последовательность объектных ~Record~-ов.
+Подробнее:
+https://insolar.atlassian.net/wiki/spaces/DEV/pages/784891920/Data+Model#DataModel-Object
+
+Чтобы отправлять ~Record~ он упаковывается в ~Message~.
+
+~Message~ - это сетевое представление ~Record~-а. Оно состоит из
+- ~Message Head~ - понабор полей, который будет передан получателю сразу
+  при отправке, который должен помещаться в UDP-пакет вместе со своей подписью.
+- ~Message Content~ - все что не влезло в ~Message Head~.
+https://insolar.atlassian.net/wiki/spaces/DEV/pages/1080295571/Core+v2+-+Messages
+
+[TODO:gmm] Jets, Filaments, Etc
+[TODO:gmm] Сохранение на леджер, разница между Light и Heavy
+
+
+Передача через пульс, пендинг, итп
+
 * Compontents of Platform
 ** Platform Core
 *** Network
@@ -111,7 +154,7 @@ https://insolar.atlassian.net/wiki/spaces/DEV/pages/1009287169/Core+v2+-+VN+-+Cu
 *** BorderContracts
 
 #+NAME:
-#+BEGIN_SRC plantuml :file ../img/uml-border-contract.png
+#+BEGIN_SRC plantuml :file ../img/uml-border-contract.png :eval no-export
   @startuml
   participant C as "RPC Client" order 10
   participant S as "RPC Server" order 20
@@ -171,6 +214,9 @@ https://insolar.atlassian.net/wiki/spaces/DEV/pages/1009287169/Core+v2+-+VN+-+Cu
 #+results:
 [[file:../img/uml-border-contract.png]]
 
+
+[[file:../img/uml-border-contract.png]]
+
 ** Ledger
 ** Virtual Machines
 ** Smart Contracts
@@ -189,6 +235,23 @@ https://insolar.atlassian.net/wiki/spaces/DEV/pages/1038221313/WIP+Insolar+Kuber
 * Questioons
 
 - Что такое AppController
+  AppController - это функциональность внутри утилиты insolard, которая
+  занимается запуском компонентов в нужной конфигурации и выбором схемы
+  взаимодействия между этими компонентами.
+  https://insolar.atlassian.net/wiki/spaces/DEV/pages/1059979386/Core+v2+-+AppController+design
+  AppController нужен для простого и быстрого создания различных
+  конфигураций ролей и сети для локального запуска. Цель получить один
+  процесс, к которому можно подключиться дебаггером.
+
+- Что такое Scheduler-сервис
+  - Узнал отсюда:
+    https://insolar.atlassian.net/wiki/spaces/SAIV/pages/1070071873/WIP+Scheduler
+- SAIV
+- SAGA
+  https://microservices.io/patterns/data/saga.html
+  [TODO:gmm] - актуальна ли saga для assured ledger?
+
+* Other
 
 Example of GoLang-code
 
