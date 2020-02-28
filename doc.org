@@ -1755,8 +1755,14 @@ Kirill Ivkushkin  21 hours ago
 (3) а учитывая "stateless" характер VNок, то в последнем случаем можно будет достаточно просто динамически регулировать кол-во VN (edited)
 Kirill Ivkushkin  21 hours ago
 ну а много immutable'ов есть почти всегда ...
-* Задача
+* Tasks
 
 BorderContract описать и сетевой вызов другого контракта по этой картинке
 
 https://insolar.atlassian.net/wiki/spaces/DEV/pages/1092517974/Core+v2+-+Compartments+and+APIs
+
+Посмотреть в конфле Delegation Tokens
+
+описать иерарахичный семафор с возможностью частичного отпуска родителя
+
+Ссылаться из конфлы на выгрузку GoDoc
