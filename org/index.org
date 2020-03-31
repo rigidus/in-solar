@@ -781,3 +781,159 @@ Ruslan Zakirov  1 hour ago
         Type 	string
     }
 #+END_SRC
+
+* Tasks
+
+video
+nalog
+blins
+gilses
+electrods
+spichki
+evgenyblich
+vopros-for-kirill
+
+
+Ruslan Zakirov Today at 3:54 PM
+@kirill.ivkushkin @mikhail.glukhov @eugene.blikh у нас есть пример в confluence обработки timeout ситуаций на конвейере? может в коде?
+54 replies
+Kirill Ivkushkin:house_with_garden:  34 minutes ago
+а для какой ситуации? (edited)
+Ruslan Zakirov  34 minutes ago
+ушли в адаптер, ждем сообщения с ответом, timeout на это ожидание
+Kirill Ivkushkin:house_with_garden:  33 minutes ago
+а зачем?
+Kirill Ivkushkin:house_with_garden:  33 minutes ago
+придёт пульс и всё решит
+Kirill Ivkushkin:house_with_garden:  33 minutes ago
+или ты про опрос пред VE? (edited)
+Ruslan Zakirov  33 minutes ago
+получение стейта от VE(P-1)
+Kirill Ivkushkin:house_with_garden:  33 minutes ago
+ага, тогда ща
+Ruslan Zakirov  31 minutes ago
+стоп, а чем этот кейс отличается от других и почему не “придёт пульс и всё решит“? :slightly_smiling_face: (edited)
+Eugene Blikh:press-f-2:  31 minutes ago
+было решено оставлять блокирующие адаптеры?
+Kirill Ivkushkin:house_with_garden:  32 minutes ago
+никаких блокирующих
+Ruslan Zakirov  31 minutes ago
+нет, не блокирующие
+Ruslan Zakirov  31 minutes ago
+под “ждем” я имел ввиду стейт SM, а не блокировку в адаптере
+Kirill Ivkushkin:house_with_garden:  30 minutes ago
+этот кейс отличается тем, что тут речь о параллелизмне разных запросов состояния, но для оптимизации, надо один из запросов задержать
+Kirill Ivkushkin:house_with_garden:  30 minutes ago
+чтобы не создавать лишней "движухи"
+Kirill Ivkushkin:house_with_garden:  29 minutes ago
+т.е. здесь не таймаут на ожидание ответа (таких не должно быть), а таймаут на ожидание перед отправкой / следующим шагом
+Kirill Ivkushkin:house_with_garden:  29 minutes ago
+так вот
+Kirill Ivkushkin:house_with_garden:  29 minutes ago
+про ожидание
+Kirill Ivkushkin:house_with_garden:  29 minutes ago
+https://insolar.atlassian.net/wiki/spaces/DEV/pages/1092452459/Core+v2+-+Conveyor+-+Brief+Intro+Example#%D0%9F%D0%BE%D0%B2%D1%82%D0%BE%D1%80-%D1%82%D0%B5%D0%BA%D1%83%D1%89%D0%B5%D0%B3%D0%BE-%D1%88%D0%B0%D0%B3%D0%B0-(Repeat)
+Kirill Ivkushkin:house_with_garden:  28 minutes ago
+см второй пример кода
+Kirill Ivkushkin:house_with_garden:  28 minutes ago
+где WaitAnyUntil
+Ruslan Zakirov  25 minutes ago
+Посмотрел
+Ruslan Zakirov  21 minutes ago
+Я не помню как ctx.WaitAnyUntil прерывается ответом?
+Ruslan Zakirov  21 minutes ago
+И еще
+Ruslan Zakirov  21 minutes ago
+Как ThenRepeatOrJump выбирает что сделать. Repeate или Jump?
+Kirill Ivkushkin:house_with_garden:  20 minutes ago
+если надо что-то проверять при ожидании (например наличие ответа), то надо или завести соотв флаг и его проверять в начале метода, или проверять счётчик запросов - см тут https://insolar.atlassian.net/wiki/spaces/DEV/pages/1092452459/Core+v2+-+Conveyor+-+Brief+Intro+Example#%D0%9F%D0%BE%D0%BB%D1%83%D1%87%D0%B5%D0%BD%D0%B8%D0%B5-%D1%80%D0%B5%D0%B7%D1%83%D0%BB%D1%8C%D1%82%D0%B0%D1%82%D0%B0
+Kirill Ivkushkin:house_with_garden:  19 minutes ago
+т.е. код будет а-ля
+Kirill Ivkushkin:house_with_garden:  16 minutes ago
+Untitled
+
+func (p *PlayerSM) stepNextGame(ctx smachine.ExecutionContext) smachine.StateUpdate {
+
+  ...
+
+    // take a small break
+
+    sleepUntil := time.Now().Add(time.Millisecond * time.Duration(rand.Intn(500)))
+
+    // here we use closure to avoid putting (sleepUntil) into SM's state
+
+    return ctx.Jump(func(ctx smachine.ExecutionContext) smachine.StateUpdate {
+
+        if p.hasState {
+
+            return ctx.Jump(p.stateIsReady)
+
+        }
+
+        return ctx.WaitAnyUntil(sleepUntil).ThenRepeatOrJump(p.stepFindPair)
+
+    })
+
+}
+
+Ruslan Zakirov  15 minutes ago
+Эту часть я понял. Ты повторил пример кода из confluence.
+Kirill Ivkushkin:house_with_garden:  14 minutes ago
+я вписал if
+Ruslan Zakirov  14 minutes ago
+ок
+Kirill Ivkushkin:house_with_garden:  14 minutes ago
+
+       if p.hasState {
+            return ctx.Jump(p.stateIsReady)
+        }
+
+Ruslan Zakirov  14 minutes ago
+вижу
+Ruslan Zakirov  12 minutes ago
+не отвечает на вопрос “как ctx.WaitAnyUntil прерывается ответом?“, то есть не понятно почему мы не будем ждать лишнее время в этом Wait, когда “ответ” нам доставили
+Kirill Ivkushkin:house_with_garden:  12 minutes ago
+по ответу сработает callback, внутри callback ты поставишь флаг и сделаешь WakeUp и SM будет активирована сразу, проверит флаг и пойдёт по своим делам дальше (edited)
+Kirill Ivkushkin:house_with_garden:  11 minutes ago
+там внутри в этой функции нету sleep'а (edited)
+Ruslan Zakirov  9 minutes ago
+пока понятно
+Ruslan Zakirov  10 minutes ago
+callback я регаю где? в bargein? (блин никак не запомню спелинг) (edited)
+Kirill Ivkushkin:house_with_garden:  9 minutes ago
+если для побудки из вне, то да, через bargeIn
+Kirill Ivkushkin:house_with_garden:  7 minutes ago
+можно даже жёстче - можно сделать bargeIn с джампом
+Kirill Ivkushkin:house_with_garden:  6 minutes ago
+и привязать к шагу
+Ruslan Zakirov  6 minutes ago
+прикольно
+Ruslan Zakirov  6 minutes ago
+достаточно
+Mikhail Glukhov  5 minutes ago
+я не понял, как сделать bargein с джампом и почему это сработает, но хочу понять
+Kirill Ivkushkin:house_with_garden:  5 minutes ago
+
+NewBargeInThisStepOnly().WithJump(...)
+
+(edited)
+Kirill Ivkushkin:house_with_garden:  4 minutes ago
+соотв, шаг не сменился, вызов bargein пробудит машину и принудительно поменяет ей шаг
+Kirill Ivkushkin:house_with_garden:  4 minutes ago
+но если шаг сменился (от того, где был создан такой bargeIn), то такой bargein будет проигнорен (edited)
+Kirill Ivkushkin:house_with_garden:  3 minutes ago
+это не почему - это как :slightly_smiling_face:
+Kirill Ivkushkin:house_with_garden:  3 minutes ago
+так он себя ведёт
+Ruslan Zakirov  2 minutes ago
+я приблизительно понял про bargein с фиксированным шагом
+Kirill Ivkushkin:house_with_garden:  1 minute ago
+тоже самое можно и для вызова адаптера
+Ruslan Zakirov  1 minute ago
+“т.е. здесь не таймаут на ожидание ответа (таких не должно быть), а таймаут на ожидание перед отправкой / следующим шагом” - это ты имел ввиду, что мы должны подождать прежде чем шлем VStateRequest к VE(P-1), а вдруг сам пришлет?
+Kirill Ivkushkin:house_with_garden:  1 minute ago
+ага
+Ruslan Zakirov  < 1 minute ago
+ок, я отмечу
+Kirill Ivkushkin:house_with_garden:  < 1 minute ago
+спасибо
