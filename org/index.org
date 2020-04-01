@@ -784,15 +784,13 @@ Ruslan Zakirov  1 hour ago
 
 * Tasks
 
-video
-nalog
 blins
 gilses
 electrods
 spichki
 evgenyblich
 vopros-for-kirill
-
+rope
 
 Ruslan Zakirov Today at 3:54 PM
 @kirill.ivkushkin @mikhail.glukhov @eugene.blikh у нас есть пример в confluence обработки timeout ситуаций на конвейере? может в коде?

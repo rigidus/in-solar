@@ -5,19 +5,34 @@
 Я хочу проанализировать структуру стейт-машин конвейера и результаты
 разбора представить как plantuml-диаграмму.
 
-Пока у меня есть один файл, который я хочу разобрать:
+Пока у меня есть один файл, который я хочу разобрать, по-видимому он
+наиболее сложный из всех стейт-машин. Я считаю, что если я буду успешно
+разбирать его, то и с остальными не будет никаких проблем.
 
 #+NAME: filename
 #+BEGIN_SRC go
   "src/github.com/insolar/assured-ledger/ledger-core/v2/logicrunner/sm_object/object.go"
 #+END_SRC
 
-Я буду передавать ~filename~ в функцию ~analyse~, которая будет выполнять
-всю работу. Она возвращатит необходимый мне ~uml~, и может что-то
-выводить (сайд-эффект), например диагностические сообщения.
+Так как это константа времении компиляции, то я ее тут же и определю и
+отправлю в блок констант, который будет определен в ~main~ несколько
+позже.
+
+#+BEGIN_SRC go :noweb yes :noweb-ref consts
+  filename  = <<filename>>
+#+END_SRC
+
+
+Я буду передавать ~filename~ в функцию ~analyse~, которая и будет
+выполнять всю работу. Она возвратит необходимый мне ~uml~, и может что-то
+выводить (сайд-эффект), например, диагностические сообщения.
 
 Таким образом ~main~ будет просто выводить возвращаемое значение
-~analyze~.
+~analyze~. В дальнейшем мы можем передавать это возвращаемое значение в
+plantuml-построитель, но пока мне удобнее видеть это в консоли.
+
+Еще ~main~ содержит placeholder для структур, которые будут определены
+позднее.
 
 #+NAME: main
 #+BEGIN_SRC go :tangle analyse.go :noweb yes
@@ -36,7 +51,7 @@
   )
 
   const (
-      filename  = <<filename>>
+      <<consts>>
 
       MistakeType = 1 + iota
 
@@ -48,15 +63,7 @@
       RetTypeCall
   )
 
-  <<parsed_file>>
-
-  <<fn_state>>
-
-  <<recv_pair>>
-
-  <<ret>>
-
-  <<variant>>
+  <<structs>>
 
   func main () {
       uml := analyse(filename)
@@ -69,18 +76,88 @@
 * Analyse
 
 ~Analyse~ формирует ~uml~, разбирая файл с с помощью ~ParseFile~. Если
-~ParseFile~ не справляется, она возвращает ~nil~ и мы уходим в панику.
+~ParseFile~ не справляется, она возвращает ~nil~ и мы уходим в панику,
+потому что больше ничего не можем сделать.
 
 #+NAME: analyse
 #+BEGIN_SRC go :noweb yes
+  func (v Variant) Show() string {
+      switch v.Type {
+      case MistakeType:
+          return fmt.Sprintf("MistakeType")
+      case SelectorType:
+          return fmt.Sprintf("(. %s %s)", v.Obj, v.Fun)
+      case StringType:
+          return fmt.Sprintf("%s", v.Str)
+      default:
+          return "Impossible Error"
+      }
+  }
+
   func analyse(filename string) string {
       pathname := fmt.Sprintf("%s/%s", os.Getenv("GOPATH"), filename)
-      uml := "@startuml"
       pf := ParseFile(pathname, true)
       if nil == pf {
           panic("Cannot parse file")
       }
-      // TODO: тут будет разбор pf
+      uml := "@startuml"
+
+      if pf.dbg {
+          fmt.Printf("\n:: resource filename: %s", pf.filename)
+      }
+      for _, state := range pf.states {
+          if pf.dbg {
+              fmt.Printf("\n\nfn: %s", state.Name) // Function name
+              fmt.Printf("\nrecv: %s | %s", state.Recv.Name, state.Recv.Type) // Receiver
+              for parName, parType := range state.Pars { // Parameters
+                  fmt.Printf("\npar name: %s | type: %s", parName, parType)
+              }
+          }
+          for _, item := range state.Rets {
+              if pf.dbg {
+                  fmt.Printf("\n%s: ['%s']", item.Lvl, item.Str)
+              }
+              // dbg
+              //uml += fmt.Sprintf("\n ! %s | %s", item.Type, item.Var.Fun)
+              switch item.Type {
+              case RetTypeCall:
+                  switch item.Var.Fun {
+                  case "Stop":
+                      uml += fmt.Sprintf("\n%s --> [*]", state.Name)
+                  case "Jump":
+                      uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
+                  case "ThenJump":
+                      uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
+                  case "JumpExt":
+                      uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
+                  case "ThenRepeat":
+                      uml += fmt.Sprintf("\n%s --> %s : ThenRepeat", state.Name, state.Name)
+                  case "RepeatOrJumpElse":
+                      uml += fmt.Sprintf("\n%s -[#RoyalBlue]-> %s : RepeatOr(Jump)Else", state.Name, item.Args[2].Fun)
+                      uml += fmt.Sprintf("\n%s -[#DarkGreen]-> %s : RepeatOrJump(Else)", state.Name, item.Args[3].Fun)
+                  default:
+                      if pf.dbg {
+                          fmt.Printf("\n(=> (. %s %s)", item.Var.Obj, item.Var.Fun)
+                          for _, arg := range item.Args {
+                              fmt.Printf("\n       %s", arg.Show())
+                          }
+                          fmt.Printf(")")
+                      }
+                  }
+              default:
+                  fmt.Printf( "\nError: Unknown RetType: %d", item.Type)
+              }
+              if pf.dbg {
+                  fmt.Printf("\n(-> (. %s %s)", item.Var.Obj, item.Var.Fun)
+                  for _, arg := range item.Args {
+                      fmt.Printf("\n       %s", arg.Show())
+                  }
+                  fmt.Printf(")")
+              }
+          }
+      }
+
+
       uml += "\n@enduml\n"
       return uml
   }
@@ -91,12 +168,12 @@
 * ParseFile
 
 Задача функции ~ParseFile~ - прочитать файл с помощью ~slurpFile~,
-разобрать его и для каждой найденной функции внутри этого файла вызвать
+разобрать его и для каждой найденной внутри него функции вызвать
 ~pf.parseMethod~.
 
-Функия ~ParseFile~ вовзращает объект ~ParsedFile~, который будет
-использоваться для анализа преобразованного содержимого и построения
-~uml~.
+Функия ~ParseFile~ вовзращает объект ~ParsedFile~, который содержит все
+разобранные функции и будет использоваться для анализа преобразованного
+содержимого и построения ~uml~.
 
 #+NAME: parse_file
 #+BEGIN_SRC go :noweb yes
@@ -135,12 +212,11 @@
   <<slurp_file>>
 
   <<parse_method>>
-
 #+END_SRC
 
 Потребуется несколько вспомогательных определений и функций:
 
-** ParsedFile
+** ParsedFile stuct
 
 Это структура, которая хранит все что мы смогли извлечь из кода
 файла. Она содержит:
@@ -151,8 +227,7 @@
 - node - корневую ноду кода
 - states - извлеченные состояния стейт-машины
 
-#+NAME: parsed_file
-#+BEGIN_SRC go
+#+BEGIN_SRC go :noweb-ref structs
   type ParsedFile struct {
       dbg      bool
       filename string
@@ -161,9 +236,10 @@
       node     *ast.File
       states   map[string]*FnState
   }
+
 #+END_SRC
 
-** FnState
+** FnState struct
 
 Это структура, которая представляет найденное состояние стейт машины. Она
 содержит:
@@ -173,32 +249,32 @@
 - Pars - параметры, которые принимает функция состояния
 - Rets - Все возможные возвращаемые значения, которые удалось найти
 
-#+NAME: fn_state
-#+BEGIN_SRC go :results append
+#+BEGIN_SRC go :noweb-ref structs
   type FnState struct {
       Name string            // Name of function
       Recv *RecvPair         // Receiver
       Pars map[string]string // Parameters: k:name, v:type
       Rets []*Ret            // All returns
   }
+
 #+END_SRC
 
-*** RecvPair
+** RecvPair stuct
 
 Эта структура содержит данные ресейвера к которому относится состояние
 стейт-машины:
 - имя
 - тип
 
-#+NAME: recv_pair
-#+BEGIN_SRC go
+#+BEGIN_SRC go :noweb-ref structs
   type RecvPair struct {
       Name string
       Type string
   }
+
 #+END_SRC
 
-*** Ret
+** Ret struct
 
 Эта структура содержит "выходы состояния", которые удалось найти при
 парсинге этого состояния. Содержит:
@@ -209,8 +285,7 @@
 - Var - содержимое возвращаемого значения
 - Args - аргументы (если есть)
 
-#+NAME: ret
-#+BEGIN_SRC go
+#+BEGIN_SRC go :noweb-ref structs
   type Ret struct {
       Lvl  string
       Str  string
@@ -218,20 +293,22 @@
       Var  Variant
       Args []Variant
   }
+
 #+END_SRC
 
-**** Variant
+** Variant struct
 
 Variant - это структура, которая представляет [TODO:gmm]
 
 #+NAME: variant
-#+BEGIN_SRC go
+#+BEGIN_SRC go :noweb-ref structs
   type Variant struct {
       Type int
       Obj  string
       Fun  string
       Str  string // string representation
   }
+
 #+END_SRC
 
 ** SlurpFile
@@ -255,13 +332,49 @@ Variant - это структура, которая представляет [TO
   }
 #+END_SRC
 
-
-
-
 * ParseMethod
 
-Это функция, которая разбирает каждую функцию в файле и анализирует
-ее. Если анализируемая функция является методом... [TODO:gmm]
+Здесь я разбираю каждую функцию в файле и анализирую ее. Если
+анализируемая функция не имеет ~receiver~ - она не является методом, и
+тогда ее можно пропустить - такие функции нас не интересуют.
+
+В ином случае я начинаю анализировать function declaration.
+
+Небольшое отступление: Для целей отладки я бы хотел иметь способ кратко
+выводить диагностические сообщения. Для этого я сделал
+раздел [[*Diag][Diag]] в котором описана одноименная функция.
+
+На этапе анализа function declaration мы итерируемся по receivers,
+несмотря на то что он там один - в какой-то момент так оказалось удобнее.
+
+Далее я выделяю из декларации функции:
+- пару Name:Type receiver-a
+- хэшмап с параметрами, где ключи - имена параметров, а значения - их
+  типы
+
+На этом этапе уже можно определить, принимает ли метод
+параметр-контекст. Если нет - то такой метод нас не интересует и мы можем
+его пропустить. Я определяю есть ли контекст с помощью функции
+~isMethodTakesCtx~ которая описана ниже в подразделе.
+
+Аналогичным образом я отфильтровываю методы, которые не возвращают
+значений, потому что среди состояний SM таких быть не может.
+
+Более того, меня интересуют только такие методы, которые возвращают
+значение типа ~smashine.StateUpdate~
+
+Окей, на этом этапе у меня есть интересующие методы - можно вывести их
+имена и перейти к разбору их кода. Я ищу все возвращаемые значения и
+сохраняю их в переменную ~rets~. Мне также пришлось написать функцию
+~collectRets~, потому что это оказалось нетривиально (см. ниже в
+подразделе)
+
+Теперь у меня есть все данные и я сохраняю их в хэш-мапу ~pf.states~, где
+ключом является имя состояния, а значением тип FnState, содержащий:
+- Name
+- Recv
+- Pars
+- Rets
 
 #+NAME: parse_method
 #+BEGIN_SRC go :noweb yes
@@ -269,28 +382,10 @@ Variant - это структура, которая представляет [TO
 
       // I want to analise only method functions (if exists)
       if nil == fn.Recv {
-          if pf.dbg {
-              fmt.Printf("\n:parseMethod: skip %s - No receiver", fn.Name.Name)
-          }
+          pf.diag("\n:parseMethod: skip %s - No receiver", fn.Name.Name)
       } else {
 
           for _, fld := range fn.Recv.List {
-
-              // I want analyse only method-functions
-              if 1 != len(fld.Names) { // There is method function
-                  if pf.dbg {
-                      //fmt.Printf("\n:parseMethod: skip %s - No method function", fn.Name.Name)
-                  }
-                  continue
-              }
-
-              //// I want analyse only exported methods
-              //if !fn.Name.IsExported() {
-              //	if pf.dbg {
-              //		fmt.Printf(":parseMethod: skip %s - Non exported \n", fn.Name.Name)
-              //	}
-              //	continue
-              //}
 
               // Receiver
               recv := &RecvPair{
@@ -310,17 +405,13 @@ Variant - это структура, которая представляет [TO
 
               // I want to analyse only methods, who takes context
               if !isMethodTakesCtx(pars) {
-                  if pf.dbg {
-                      fmt.Printf("\n:parseMethod: skip %s - Doesn`t take CTX", fn.Name.Name)
-                  }
+                  pf.diag("\n:parseMethod: skip %s - Doesn`t take CTX", fn.Name.Name)
                   continue
               }
 
               // I want analyse only methods, which returned values
               if nil == fn.Type.Results {
-                  if pf.dbg {
-                      fmt.Printf("\n:parseMethod: skip %s - No return value", fn.Name.Name)
-                  }
+                  pf.diag("\n:parseMethod: skip %s - No return value", fn.Name.Name)
                   continue
               }
 
@@ -342,7 +433,7 @@ Variant - это структура, которая представляет [TO
               }
 
               // Show name (debug)
-              //fmt.Printf("\n:parseMethod: (name dbg) %s", fn.Name.Name)
+              pf.diag("\n:parseMethod: (sm-name) %s", fn.Name.Name)
 
               // Find all Return Statements in function content
               var rets = make([]*Ret, 0)
@@ -376,15 +467,30 @@ Variant - это структура, которая представляет [TO
       }
   }
 
+  <<diag>>
+
   <<is_method_takes_ctx>>
 
   <<collect_rets>>
+#+END_SRC
 
+** Diag
+
+Если ~pf.dbg==true~ - выводит диагностическое сообщение
+
+#+NAME: diag
+#+BEGIN_SRC go
+  func (pf *ParsedFile) diag(msg string, par ...interface{}) {
+      if pf.dbg {
+          fmt.Printf(msg, par...)
+      }
+  }
 #+END_SRC
 
 ** isMethodTakesCtx
 
-[TODO:gmm]
+Функция определяет есть ли в хэш-мапе параметров какой-нибудь параметр,
+который содержит "Context" в названии своего типа.
 
 #+NAME: is_method_takes_ctx
 #+BEGIN_SRC go
@@ -519,149 +625,5 @@ Variant - это структура, которая представляет [TO
       }
       return acc
   }
-
-#+END_SRC
-
-*** RetTypeCall
-
-* AnalyseOld
-
-#+NAME: mainwww
-#+BEGIN_SRC go :noweb yes
-  ///
-  //    Copyright 2019 Insolar Technologies
-  //
-  //    Licensed under the Apache License, Version 2.0 (the "License");
-  //    you may not use this file except in compliance with the License.
-  //    You may obtain a copy of the License at
-  //
-  //        http://www.apache.org/licenses/LICENSE-2.0
-  //
-  //    Unless required by applicable law or agreed to in writing, software
-  //    distributed under the License is distributed on an "AS IS" BASIS,
-  //    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  //    See the License for the specific language governing permissions and
-  //    limitations under the License.
-  ///
-
-  package main
-
-  import (
-      "errors"
-      "fmt"
-      "go/ast"
-      "go/parser"
-      "go/token"
-      "io/ioutil"
-      "os"
-      "reflect"
-      "strings"
-  )
-
-  const (
-      TemplateDirectory = "templates"
-
-      //filename = "src/github.com/insolar/assured-ledger/ledger-core/v2/conveyor/smachine/ping-pong/example/example_3.go"
-      filename  = "src/github.com/insolar/assured-ledger/ledger-core/v2/logicrunner/sm_object/object.go1"
-      mainPkg   = "main"
-      errorType = "error"
-      MachineTypeGoPlugin
-  )
-
-
-
-  const (
-      MistakeType = 1 + iota
-
-      // type-ids for Variant struct
-      SelectorType
-      StringType
-
-      // type-ids for Ret struct
-      RetTypeCall
-  )
-
-  func (v Variant) Show() string {
-      switch v.Type {
-      case MistakeType:
-          return fmt.Sprintf("MistakeType")
-      case SelectorType:
-          return fmt.Sprintf("(. %s %s)", v.Obj, v.Fun)
-      case StringType:
-          return fmt.Sprintf("%s", v.Str)
-      default:
-          return "Impossible Error"
-      }
-  }
-
-
-  func main() {
-      pathname := fmt.Sprintf("%s/%s", os.Getenv("GOPATH"), filename)
-      pf := ParseFile(pathname, true)
-      if nil == pf {
-          panic("Cannot parse file")
-      }
-      uml := "@startuml"
-      // Debug output
-      if pf.dbg {
-          fmt.Printf("\n:: resource filename: %s", pf.filename)
-      }
-      for _, state := range pf.states {
-          if pf.dbg {
-              fmt.Printf("\n\nfn: %s", state.Name)                            // Function name
-              fmt.Printf("\nrecv: %s | %s", state.Recv.Name, state.Recv.Type) // Receiver
-              for parName, parType := range state.Pars {                      // Parameters
-                  fmt.Printf("\npar name: %s | type: %s", parName, parType)
-              }
-          }
-          for _, item := range state.Rets {
-              if pf.dbg {
-                  fmt.Printf("\n%s: ['%s']", item.Lvl, item.Str)
-              }
-              // dbg
-              //uml += fmt.Sprintf("\n ! %s | %s", item.Type, item.Var.Fun)
-              switch item.Type {
-              case RetTypeCall:
-                  switch item.Var.Fun {
-                  case "Stop":
-                      uml += fmt.Sprintf("\n%s --> [*]", state.Name)
-                  case "Jump":
-                      uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
-                  case "ThenJump":
-                      uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
-                  case "JumpExt":
-                      uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
-                  case "ThenRepeat":
-                      uml += fmt.Sprintf("\n%s --> %s : ThenRepeat", state.Name, state.Name)
-                  case "RepeatOrJumpElse":
-                      uml += fmt.Sprintf("\n%s -[#RoyalBlue]-> %s : RepeatOr(Jump)Else", state.Name, item.Args[2].Fun)
-                      uml += fmt.Sprintf("\n%s -[#DarkGreen]-> %s : RepeatOrJump(Else)", state.Name, item.Args[3].Fun)
-                  default:
-                      if pf.dbg {
-                          fmt.Printf("\n(=> (. %s %s)", item.Var.Obj, item.Var.Fun)
-                          for _, arg := range item.Args {
-                              fmt.Printf("\n       %s", arg.Show())
-                          }
-                          fmt.Printf(")")
-                      }
-                  }
-              default:
-                  fmt.Printf("\nError: Unknown RetType: %d", item.Type)
-              }
-              if pf.dbg {
-                  fmt.Printf("\n(-> (. %s %s)", item.Var.Obj, item.Var.Fun)
-                  for _, arg := range item.Args {
-                      fmt.Printf("\n       %s", arg.Show())
-                  }
-                  fmt.Printf(")")
-              }
-          }
-      }
-      uml += "\n@enduml"
-      fmt.Printf("\n\n\n\n\n~~~~~~~~~~~~~~~~~\n%s", uml)
-  }
-
-
-
 
 #+END_SRC
