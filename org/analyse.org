@@ -67,7 +67,9 @@ plantuml-построитель, но пока мне удобнее видет�
 
   func main () {
       uml := analyse(filename)
-      fmt.Printf("\n\n\n\n\n~~~~~~~~~~~~~~~~~\n%s", uml)
+      uml += "uml" // rem
+      fmt.Printf("\n") // rem
+      //fmt.Printf("\n\n\n\n\n~~~~~~~~~~~~~~~~~\n%s", uml)
   }
 
   <<analyse>>
@@ -102,61 +104,60 @@ plantuml-построитель, но пока мне удобнее видет�
       }
       uml := "@startuml"
 
-      if pf.dbg {
-          fmt.Printf("\n:: resource filename: %s", pf.filename)
-      }
-      for _, state := range pf.states {
-          if pf.dbg {
-              fmt.Printf("\n\nfn: %s", state.Name) // Function name
-              fmt.Printf("\nrecv: %s | %s", state.Recv.Name, state.Recv.Type) // Receiver
-              for parName, parType := range state.Pars { // Parameters
-                  fmt.Printf("\npar name: %s | type: %s", parName, parType)
-              }
-          }
-          for _, item := range state.Rets {
-              if pf.dbg {
-                  fmt.Printf("\n%s: ['%s']", item.Lvl, item.Str)
-              }
-              // dbg
-              //uml += fmt.Sprintf("\n ! %s | %s", item.Type, item.Var.Fun)
-              switch item.Type {
-              case RetTypeCall:
-                  switch item.Var.Fun {
-                  case "Stop":
-                      uml += fmt.Sprintf("\n%s --> [*]", state.Name)
-                  case "Jump":
-                      uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
-                  case "ThenJump":
-                      uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
-                  case "JumpExt":
-                      uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
-                  case "ThenRepeat":
-                      uml += fmt.Sprintf("\n%s --> %s : ThenRepeat", state.Name, state.Name)
-                  case "RepeatOrJumpElse":
-                      uml += fmt.Sprintf("\n%s -[#RoyalBlue]-> %s : RepeatOr(Jump)Else", state.Name, item.Args[2].Fun)
-                      uml += fmt.Sprintf("\n%s -[#DarkGreen]-> %s : RepeatOrJump(Else)", state.Name, item.Args[3].Fun)
-                  default:
-                      if pf.dbg {
-                          fmt.Printf("\n(=> (. %s %s)", item.Var.Obj, item.Var.Fun)
-                          for _, arg := range item.Args {
-                              fmt.Printf("\n       %s", arg.Show())
-                          }
-                          fmt.Printf(")")
-                      }
-                  }
-              default:
-                  fmt.Printf( "\nError: Unknown RetType: %d", item.Type)
-              }
-              if pf.dbg {
-                  fmt.Printf("\n(-> (. %s %s)", item.Var.Obj, item.Var.Fun)
-                  for _, arg := range item.Args {
-                      fmt.Printf("\n       %s", arg.Show())
-                  }
-                  fmt.Printf(")")
-              }
-          }
-      }
-
+      // if pf.dbg {
+      //     fmt.Printf("\n:: resource filename: %s", pf.filename)
+      // }
+      // for _, state := range pf.states {
+      //     if pf.dbg {
+      //         fmt.Printf("\n\nfn: %s", state.Name) // Function name
+      //         fmt.Printf("\nrecv: %s | %s", state.Recv.Name, state.Recv.Type) // Receiver
+      //         for parName, parType := range state.Pars { // Parameters
+      //             fmt.Printf("\npar name: %s | type: %s", parName, parType)
+      //         }
+      //     }
+      //     for _, item := range state.Rets {
+      //         if pf.dbg {
+      //             fmt.Printf("\n%s: ['%s']", item.Lvl, item.Str)
+      //         }
+      //         // dbg
+      //         //uml += fmt.Sprintf("\n ! %s | %s", item.Type, item.Var.Fun)
+      //         switch item.Type {
+      //         case RetTypeCall:
+      //             switch item.Var.Fun {
+      //             case "Stop":
+      //                 uml += fmt.Sprintf("\n%s --> [*]", state.Name)
+      //             case "Jump":
+      //                 uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
+      //             case "ThenJump":
+      //                 uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
+      //             case "JumpExt":
+      //                 uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
+      //             case "ThenRepeat":
+      //                 uml += fmt.Sprintf("\n%s --> %s : ThenRepeat", state.Name, state.Name)
+      //             case "RepeatOrJumpElse":
+      //                 uml += fmt.Sprintf("\n%s -[#RoyalBlue]-> %s : RepeatOr(Jump)Else", state.Name, item.Args[2].Fun)
+      //                 uml += fmt.Sprintf("\n%s -[#DarkGreen]-> %s : RepeatOrJump(Else)", state.Name, item.Args[3].Fun)
+      //             default:
+      //                 if pf.dbg {
+      //                     fmt.Printf("\n(=> (. %s %s)", item.Var.Obj, item.Var.Fun)
+      //                     for _, arg := range item.Args {
+      //                         fmt.Printf("\n       %s", arg.Show())
+      //                     }
+      //                     fmt.Printf(")")
+      //                 }
+      //             }
+      //         default:
+      //             fmt.Printf( "\nError: Unknown RetType: %d", item.Type)
+      //         }
+      //         if pf.dbg {
+      //             fmt.Printf("\n(-> (. %s %s)", item.Var.Obj, item.Var.Fun)
+      //             for _, arg := range item.Args {
+      //                 fmt.Printf("\n       %s", arg.Show())
+      //             }
+      //             fmt.Printf(")")
+      //         }
+      //     }
+      // }
 
       uml += "\n@enduml\n"
       return uml
@@ -441,14 +442,14 @@ Variant - это структура, которая представляет [TO
                   retStmt, ok := smth.(*ast.ReturnStmt)
                   if ok {
                       // return from top-level statements of function
-                      rets = append(rets, collectRets(retStmt, pf.code, "Top")...)
+                      rets = append(rets, pf.collectRets(retStmt, "Top")...)
                   } else {
                       ast.Inspect(smth, func(in ast.Node) bool {
                           // Find Return Statements
                           retStmt, ok := in.(*ast.ReturnStmt) // ←
                           if ok {
                               // return from deep-level function statememt
-                              rets = append(rets, collectRets(retStmt, pf.code, "Deep")...)
+                              rets = append(rets, pf.collectRets(retStmt, "Deep")...)
                           } else {
                               //fmt.Printf("\nin: %s", reflect.TypeOf(in))
                           }
@@ -506,19 +507,71 @@ Variant - это структура, которая представляет [TO
 
 ** collectRets
 
-[TODO:gmm]
+Эта функция анализирует переданный ей ~return statement~. Во всех случаях
+которые мне встретились эти return statement имеют тип ~*ast.CallExpr~,
+но я на всякий случай делаю CASE по типу, т.к. неизвестно что может
+встретиться в будущем.
+
+Существуют простые return statements, вроде ~ctx.Stop()~ или
+~ctx.Jump(smth)~.
+
+Более сложные случаи - это варианты ~ctx.JumpExt~, которые выглядят так:
+
+#+BEGIN_SRC go
+  ctx.JumpExt(smachine.SlotStep{
+      Transition: sm.waitForMigration,
+      Migration:  sm.migrateSendStateAfterExecution,
+  })
+#+END_SRC
+
+И наконец, наиболее объемные вот такие простыни:
+
+#+BEGIN_SRC go
+  sm.artifactClient.PrepareAsync(ctx, func(svc s_artifact.ArtifactClientService) smachine.AsyncResultFunc {
+		...
+		return func(ctx smachine.AsyncResultContext) {
+            ...
+		}
+	}).DelayedStart().Sleep().ThenJump(sm.stateGotLatestValidatedStatePrototypeAndCode)
+#+END_SRC
+
+Как можно заметить, все они представляют собой т.н. ~SelectorExpr~, т.е
+выражение с точкой. То, что после точки называется ~Selector~ и во всех
+встреченных случаях представляе собой что-то из этого списка:
+- Stop
+- Jump
+- ThenRepeat
+- ThenJump
+- JumpExt
+Я сохраняю это в ~item.Var.Fun~ (Var - потому что Variant, Fun - потому
+что это функция (вернее метод) вызываемая на объекте)
+
+А вот то, что идет до точки называется ~X~ и может быть разных типов:
+- *ast.Ident - как правило это ~ctx~, это характерно для возвратов вида:
+  - ctx.Stop()
+  - ctx.Jump(smth)
+  - ctx.JumpExt(SlotStep) - в этом случае внутри будет структура
+    SlotStep, указывающая на миграцию (об этом позже в этом разделе)
+- *ast.CallExpr - это варианты:
+  - ctx.Sleep().ThenRepeat()
+  - someasync.DelayedStartSleep().ThenJump(smth) [TODO:gmm] - Как это работает?
+
+[TODO:gmm] - Для целей разбора миграции нам как раз нужен SlotStep
+
+[TODO:gmm] - Далее мы разбираем аргументы return statement - продолжит описание
 
 #+NAME: collect_rets
 #+BEGIN_SRC go
-  func collectRets(retStmt *ast.ReturnStmt, code []byte, level string) []*Ret {
+  func (pf *ParsedFile) collectRets(retStmt *ast.ReturnStmt, level string) []*Ret {
       var acc []*Ret
       for _, ret := range retStmt.Results {
           item := &Ret{
               Lvl: level,
-              Str: fmt.Sprintf("%s", code[ret.Pos()-1:ret.End()-1]),
+              Str: fmt.Sprintf("%s", pf.code[ret.Pos()-1:ret.End()-1]),
           }
+          pf.diag("\n :collectRet: ~~~~~~ (item.Str) : %s",  item.Str)
+
           for _, retNode := range retStmt.Results {
-              /// fmt.Printf("\n :collectRet: (dbg type of retNode) %s",  reflect.TypeOf(retNode))
               switch retNode.(type) {
               case *ast.CallExpr:
                   item.Type = RetTypeCall
@@ -527,25 +580,25 @@ Variant - это структура, которая представляет [TO
                   case *ast.SelectorExpr:
                       retSelector := retCall.Fun.(*ast.SelectorExpr)
                       item.Var.Fun = retSelector.Sel.Name
-                      /// fmt.Printf("\n  :collectRet: (Selector) (%s.) =:[%s]:=", reflect.TypeOf(retSelector.X), retSelector.Sel.Name)
+                      pf.diag("\n  :collectRet: (Selector) (%s.) =:[%s]:=", reflect.TypeOf(retSelector.X), retSelector.Sel.Name)
                       switch retSelector.X.(type) { // Analyse started from [selector.*]
                       case *ast.Ident:
                           retX := retSelector.X.(*ast.Ident)
                           item.Var.Obj = retX.Name
-                          /// fmt.Printf("\n   :collectRet: (%s.)", item.Var.Obj)
+                          pf.diag("\n   :collectRet: (ident) : %s _._", item.Var.Obj)
                           switch item.Var.Fun {
                           case "Jump":
                           case "Stop":
                           case "JumpExt":
                           default:
-                              fmt.Printf("\n:collectRets: [WARN]: UNKNOWN RET SELECTOR '%s' in '%s.%s'",
+                              pf.diag("\n:collectRets: [WARN]: UNKNOWN RET SELECTOR '%s' in '%s.%s'",
                                   item.Var.Fun, item.Var.Obj, item.Var.Fun)
                           }
                       case *ast.CallExpr:
                           subX := retSelector.X.(*ast.CallExpr)
-                          subXStr := fmt.Sprintf("%s", code[subX.Pos()-1:subX.End()-1])
+                          subXStr := fmt.Sprintf("%s", pf.code[subX.Pos()-1:subX.End()-1])
                           item.Var.Obj = subXStr
-                          /// fmt.Printf("\n   :collectRet: (call to selector) (%s.)", item.Var.Obj)
+                          pf.diag("\n   :collectRet: (call to selector) : %s _._", item.Var.Obj)
                           switch item.Var.Fun { // Check Fun (nb: not arg!)
                           case "ThenRepeat":
                           case "ThenJump":
@@ -556,7 +609,7 @@ Variant - это структура, которая представляет [TO
                       default:
                           fmt.Printf("\nERR: UNKNOWN RETSELECTOR %s | ",
                               reflect.TypeOf(retSelector.X),
-                              code[retSelector.X.Pos()-1:retSelector.X.End()-1],
+                              pf.code[retSelector.X.Pos()-1:retSelector.X.End()-1],
                           )
                       }
 
@@ -567,7 +620,7 @@ Variant - это структура, которая представляет [TO
                           switch retarg.(type) {
                           case *ast.SelectorExpr:
                               sel := retarg.(*ast.SelectorExpr)
-                              selName := fmt.Sprintf("%s", code[sel.X.Pos()-1:sel.X.End()-1])
+                              selName := fmt.Sprintf("%s", pf.code[sel.X.Pos()-1:sel.X.End()-1])
                               /// fmt.Printf("\n   -|[%s] %s .|. %s", reflect.TypeOf(sel), selName, sel.Sel.Name)
                               arg := Variant{
                                   Type: SelectorType,
@@ -594,7 +647,7 @@ Variant - это структура, которая представляет [TO
                                       if ok {
                                           if "Transition" == fmt.Sprintf("%s", exp.Key) {
                                               sel := exp.Value.(*ast.SelectorExpr)
-                                              selName := fmt.Sprintf("%s", code[sel.X.Pos()-1:sel.X.End()-1])
+                                              selName := fmt.Sprintf("%s", pf.code[sel.X.Pos()-1:sel.X.End()-1])
                                               arg = Variant{
                                                   Type: SelectorType,
                                                   Obj:  selName,
@@ -610,15 +663,15 @@ Variant - это структура, которая представляет [TO
                               }
                               accArgs = append(accArgs, arg)
                           default:
-                              fmt.Printf("\nERR: UNKNOWN RETARGtype [%s] :OF: %s", reflect.TypeOf(retarg), retarg)
+                              pf.diag("\nERR: UNKNOWN RETARGtype [%s] :OF: %s", reflect.TypeOf(retarg), retarg)
                           }
                       }
                       item.Args = accArgs
                   default:
-                      fmt.Printf("\nERR: UNKNOWN RETSEL %s", fmt.Sprintf("%s", reflect.TypeOf(retCall.Fun)))
+                      pf.diag("\nERR: UNKNOWN RETSEL %s", fmt.Sprintf("%s", reflect.TypeOf(retCall.Fun)))
                   }
               default:
-                  fmt.Printf("\nERR: UNKNOWN RETNODE %s", fmt.Sprintf("%s", reflect.TypeOf(retNode)))
+                  pf.diag("\nERR: UNKNOWN TYPE OF RETNODE %s", fmt.Sprintf("%s", reflect.TypeOf(retNode)))
               }
           }
           acc = append(acc, item)
