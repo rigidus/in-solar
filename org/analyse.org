@@ -104,60 +104,56 @@ plantuml-построитель, но пока мне удобнее видет�
       }
       uml := "@startuml"
 
-      // if pf.dbg {
-      //     fmt.Printf("\n:: resource filename: %s", pf.filename)
-      // }
-      // for _, state := range pf.states {
-      //     if pf.dbg {
-      //         fmt.Printf("\n\nfn: %s", state.Name) // Function name
-      //         fmt.Printf("\nrecv: %s | %s", state.Recv.Name, state.Recv.Type) // Receiver
-      //         for parName, parType := range state.Pars { // Parameters
-      //             fmt.Printf("\npar name: %s | type: %s", parName, parType)
-      //         }
-      //     }
-      //     for _, item := range state.Rets {
-      //         if pf.dbg {
-      //             fmt.Printf("\n%s: ['%s']", item.Lvl, item.Str)
-      //         }
-      //         // dbg
-      //         //uml += fmt.Sprintf("\n ! %s | %s", item.Type, item.Var.Fun)
-      //         switch item.Type {
-      //         case RetTypeCall:
-      //             switch item.Var.Fun {
-      //             case "Stop":
-      //                 uml += fmt.Sprintf("\n%s --> [*]", state.Name)
-      //             case "Jump":
-      //                 uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
-      //             case "ThenJump":
-      //                 uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
-      //             case "JumpExt":
-      //                 uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
-      //             case "ThenRepeat":
-      //                 uml += fmt.Sprintf("\n%s --> %s : ThenRepeat", state.Name, state.Name)
-      //             case "RepeatOrJumpElse":
-      //                 uml += fmt.Sprintf("\n%s -[#RoyalBlue]-> %s : RepeatOr(Jump)Else", state.Name, item.Args[2].Fun)
-      //                 uml += fmt.Sprintf("\n%s -[#DarkGreen]-> %s : RepeatOrJump(Else)", state.Name, item.Args[3].Fun)
-      //             default:
-      //                 if pf.dbg {
-      //                     fmt.Printf("\n(=> (. %s %s)", item.Var.Obj, item.Var.Fun)
-      //                     for _, arg := range item.Args {
-      //                         fmt.Printf("\n       %s", arg.Show())
-      //                     }
-      //                     fmt.Printf(")")
-      //                 }
-      //             }
-      //         default:
-      //             fmt.Printf( "\nError: Unknown RetType: %d", item.Type)
-      //         }
-      //         if pf.dbg {
-      //             fmt.Printf("\n(-> (. %s %s)", item.Var.Obj, item.Var.Fun)
-      //             for _, arg := range item.Args {
-      //                 fmt.Printf("\n       %s", arg.Show())
-      //             }
-      //             fmt.Printf(")")
-      //         }
-      //     }
-      // }
+      pf.diag("\n\n:: ======= resource filename: %s", pf.filename)
+
+      for _, state := range pf.states {
+          if pf.dbg {
+              pf.diag("\n\nfn: %s", state.Name) // Function name
+              // pf.diag("\nrecv: %s | %s", state.Recv.Name, state.Recv.Type) // Receiver
+              for parName, parType := range state.Pars { // Parameters
+                  pf.diag("\npar name: %s | type: %s", parName, parType)
+              }
+          }
+          for _, item := range state.Rets {
+              if pf.dbg {
+                  fmt.Printf("\n%s: ['%s']", item.Lvl, item.Str)
+              }
+              // dbg
+              //uml += fmt.Sprintf("\n ! %s | %s", item.Type, item.Var.Fun)
+              switch item.Type {
+              case RetTypeCall:
+                  switch item.Var.Fun {
+                  case "Stop":
+                      uml += fmt.Sprintf("\n%s --> [*]", state.Name)
+                  case "Jump":
+                      uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
+                  case "ThenJump":
+                      uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
+                  case "JumpExt":
+                      uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
+                  case "ThenRepeat":
+                      uml += fmt.Sprintf("\n%s --> %s : ThenRepeat", state.Name, state.Name)
+                  case "RepeatOrJumpElse":
+                      uml += fmt.Sprintf("\n%s -[#RoyalBlue]-> %s : RepeatOr(Jump)Else", state.Name, item.Args[2].Fun)
+                      uml += fmt.Sprintf("\n%s -[#DarkGreen]-> %s : RepeatOrJump(Else)", state.Name, item.Args[3].Fun)
+                  default:
+                      pf.diag("\n(=> (. %s %s)", item.Var.Obj, item.Var.Fun)
+                      for _, arg := range item.Args {
+                          pf.diag("\n       %s", arg.Show())
+                      }
+                      pf.diag(")")
+                  }
+              default:
+                  pf.diag( "\nError: Unknown RetType: %d", item.Type)
+              }
+              // -:- fn representation
+              fmt.Printf("\n(-> (. %s %s)", item.Var.Obj, item.Var.Fun)
+              for _, arg := range item.Args {
+                  pf.diag("\n       %s", arg.Show())
+              }
+              pf.diag(")")
+          }
+      }
 
       uml += "\n@enduml\n"
       return uml
@@ -663,8 +659,8 @@ Variant - это структура, которая представляет [TO
                                               }
                                               pf.diag("\n   -| -transition: %s.%s", selName, sel.Sel.Name)
                                           case "Migration":
-                                              // sel := exp.Value.(*ast.SelectorExpr)
-                                              // selName := fmt.Sprintf("%s", pf.code[sel.X.Pos()-1:sel.X.End()-1])
+                                              sel := exp.Value.(*ast.SelectorExpr)
+                                              selName := fmt.Sprintf("%s", pf.code[sel.X.Pos()-1:sel.X.End()-1])
                                               // arg = Variant{
                                               //     Type: SelectorType,
                                               //     Obj:  selName,
