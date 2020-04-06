@@ -63,7 +63,10 @@ Insolar - это распределенный вычислитель, испол
     не допускается.
 - ~Special Role~ - особые разрешения для Node, не связанные со ~Static
   Role~, но их можно совмещать. Node может иметь ноль и более ролей этого
-  типа, они назначаются при регистрации Node.
+  типа, они назначаются при регистрации Node. В настоящий момент
+  используется только одна специальная роль - Discovery. В дальнейшем
+  появится роль Dynamic Discovery.
+
 - (ещё ожидаются роли Cascade и Encrypt)
 
 Нам интересны некоторые часто используемые динамические роли:
@@ -502,11 +505,11 @@ Static Role одна и только одна на узел.
 | Dynamic Roles                                  | NA                | (2)                                       | (2)                             | (2)                                                                         |
 
 
-(1) VE(A, Pn) не может быть VV(A, Pn), т.е. исполнитель не может быть
-валидатором для своих результатов. См. ниже.  (2) Executor (*E), Replica
-(*R), Validator(*V), Stash(*S) *known node - узел за пределами текущего
-консенсуса, но который можно аутенцифицировать и авторизовать (есть ключ
-и т.п.)
+- (1) VE(A, Pn) не может быть VV(A, Pn), т.е. исполнитель не может быть
+  валидатором для своих результатов. См. ниже.
+- (2) Executor (*E), Replica (*R), Validator(*V), Stash(*S) *known node -
+  узел за пределами текущего консенсуса, но который можно
+  аутенцифицировать и авторизовать (есть ключ и т.п.)
 
 ***** Allocation Restrictions
 
@@ -516,12 +519,13 @@ Static Role одна и только одна на узел.
 - Обязательный - исполнитель (*E) не может быть автоматически выбран на
   роль валидатора (*V) для проверки собственных результатов. Это
   ограничение действует безусловно, функция выбора валидаторов не долна
-  включать узел, вычисленный как *E.  [NOTE] Это так же должно
-  распространяться и на делегатов, но в ограниченной
-  форме. Т.к. делегирование выполняется по запросам, то если делегат
-  попал в валидаторы, то необходимо, чтобы для каждого делегированного
-  запроса было достаточно валидаторов, не считая делегата, его
-  выполнившего.
+  включать узел, вычисленный как *E.
+
+  [NOTE] Это так же должно распространяться и на делегатов, но в
+  ограниченной форме. Т.к. делегирование выполняется по запросам, то если
+  делегат попал в валидаторы, то необходимо, чтобы для каждого
+  делегированного запроса было достаточно валидаторов, не считая
+  делегата, его выполнившего.
 - Расширенный - если для пульсов P и P-1 исполнителем *E выбран один и
   тот же узел, то для P узел обязан сделать полное делегирование роли на
   следующий (с т.з. allocation function) узел. Данное поведение
@@ -546,38 +550,61 @@ Static Role одна и только одна на узел.
 
 #+NAME:
 #+BEGIN_SRC plantuml :file ../img/uml-border-contract.png :eval no-export
-  @startuml participant C as "RPC Client" order 10 participant S as "RPC
-  Server" order 20 participant V as "Virtual Node" order 30 == Pulse
-  change == S <- : CommitPulse(PN) S -> S : SeqN = FirstSeqN =
-  Rand.UInt()\nmapSecrets[PN] = SecretN = Rand.UInt() ...  C -> S :
-  getSeed() activate S S -> S : seed = [PN, SeqN, hash(PK, SeqN,
-  mapSecrets[PN])]\nmapSeeds[PN][SeqN]=1\nSeqN++ S -> C : seed deactivate
-  S note right of S To keep seeds:
+  @startuml
+  participant C as "RPC Client" order 10
+  participant S as "RPC Server" order 20
+  participant V as "Virtual Node" order 30
+  == Pulse change ==
+  S <- : CommitPulse(PN)
+  S -> S : SeqN = FirstSeqN = Rand.UInt()\nmapSecrets[PN] = SecretN = Rand.UInt()
+  ...
+  C -> S : getSeed()
+  activate S
+  S -> S : seed = [PN, SeqN, hash(PK, SeqN, mapSecrets[PN])]\nmapSeeds[PN][SeqN]=1\nSeqN++
+  S -> C : seed
+  deactivate S
+  note right of S
+  To keep seeds:
+  => ~13kB per 100k seeds
   - PN, FirstSeqN, SecretN
   - bitmap[# of SeqN]
-  => ~13kB per 100k seeds end note note right of S NB! Seed generation &
-  load balancig can be done on a separate server. Then the seed should be
-  extended by adding [mapSecrets[PN], FirstSeqN] encrypted by target's
-  PK.  end note ...  C -> S : apiCall(payload[seed, endpoint, callSite])
-  activate S S -> S :
-  assert(mapSeed[seed.PN][seed.SeqN]==1)\nassert(seed.hash == hash(PK,
-  seed.SeqN, mapSecrets[seed.PN])\nmapSeed[seed.PN][seed.SeqN]=0 V \->
-  S : facade = getEndpointFacade(endpoint) // cacheable S -> S :
-  facade.preValidatePayload(payload) V \-> S : slotId :=
-  conveyor.AddInput(incomingExternal, payload, validation) S -> C :
-  queueId = [PN, slotID, hash(payload)] note right of C Can also include
-  sign(PK(VN), hash(queueId)) to prevent MitM end note deactivate S
-  activate V note right of V SM for the request end note V -> V :
-  identity = validateIdentity(payload) // can call e.g. Kerberos V -> :
-  extCallRef = registerExternalIncoming(payload) +
-  \nregisterImpersonatedOutgoing(payload, identity) ...  V ->x V : stop
-  deactivate V S \-> C : (get a new seed)\nstatus =
-  apiCallStatus(payload[new_seed, queueId]) note right of S apiCallStatus
-  will reject too old PNs, then it goes into 4 ways:
+  end note
+  note right of S
+  NB! Seed generation & load balancig can be done
+  on a separate server. Then the seed should be
+  extended by adding [mapSecrets[PN], FirstSeqN]
+  encrypted by target's PK.
+  end note
+  ...
+  C -> S : apiCall(payload[seed, endpoint, callSite])
+  activate S
+  S -> S : assert(mapSeed[seed.PN][seed.SeqN]==1)\nassert(seed.hash == hash(PK, seed.SeqN, mapSecrets[seed.PN])\nmapSeed[seed.PN][seed.SeqN]=0
+  V \-> S : facade = getEndpointFacade(endpoint) // cacheable
+  S -> S : facade.preValidatePayload(payload)
+  V \-> S : slotId := conveyor.AddInput(incomingExternal, payload, validation)
+  S -> C : queueId = [PN, slotID, hash(payload)]
+  note right of C
+  Can also include sign(PK(VN), hash(queueId)) to prevent MitM
+  end note
+  deactivate S
+  activate V
+  note right of V
+  SM for the request
+  end note
+  V -> V : identity = validateIdentity(payload) // can call e.g. Kerberos
+  V -> : extCallRef = registerExternalIncoming(payload) + \nregisterImpersonatedOutgoing(payload, identity)
+  ...
+  V ->x V : stop
+  deactivate V
+  S \-> C : (get a new seed)\nstatus = apiCallStatus(payload[new_seed, queueId])
+  note right of S
+  apiCallStatus will reject too old PNs, then it goes into 4 ways:
   1. (current PN) will look for an SM by slotID
   2. (past PN) will look for an SM, then in a special cache by slotID
   3. (antique PN) will create a special SM to find a registration record by [PN, hash(payload)]
-  end note @enduml #+END_SRC
+  end note
+  @enduml
+#+END_SRC
 
 #+results:
 [[file:../img/uml-border-contract.png]]
@@ -617,8 +644,7 @@ https://insolar.atlassian.net/wiki/spaces/DEV/pages/1038221313/WIP+Insolar+Kuber
     https://insolar.atlassian.net/wiki/spaces/SAIV/pages/1070071873/WIP+Scheduler
 - SAIV
 - SAGA
-  https://microservices.io/patterns/data/saga.html [TODO:gmm] - актуальна
-  ли saga для assured ledger?
+  https://microservices.io/patterns/data/saga.html
 
 * Other
 
@@ -639,158 +665,212 @@ https://insolar.atlassian.net/wiki/spaces/DEV/pages/1038221313/WIP+Insolar+Kuber
 
 
 
-@eugene.blikh в какой SM обрабатывается вызов? И как эти SM связаны с SM
-объекта?  44 replies Eugene Blikh:press-f-2: 2 hours ago все внешние
-вызовы попадают сначала в SM из sm_request (в init.go находится роутер
-сообщение -> тип стейт машины)далее (на примере call method) машина
-обращается к объекту используя “useSharedObjectInfo” функцию (которая
-закидывает то что ей нужно сделать в “контекст” объекта, на самом деле
-которая получает доступ к расшаренному состоянию объекта) Ruslan Zakirov
-2 hours ago перефразирую: Ruslan Zakirov 2 hours ago сам запрос
-(сообщение) обрабатывается в своем инстансе SM обработки вызовов, также
-есть инстанс SM “объектов“, который шарит данные общего доступа для
-исполнений Ruslan Zakirov 2 hours ago так?  Eugene Blikh:press-f-2: 2
-hours ago все так, да Eugene Blikh:press-f-2: 2 hours ago а почему вы
-спрашиваете?  Ruslan Zakirov 2 hours ago хочу понять состояние мира и как
-привести его к состоянию будущего :slightly_smiling_face: Ruslan Zakirov
-2 hours ago а ты произнес этот вопрос со специальным выговором?
-:slightly_smiling_face: Eugene Blikh:press-f-2: 2 hours ago нет, конечно,
-это было-бы токсично Eugene Blikh:press-f-2: 2 hours ago
-:goose:
-Ruslan Zakirov 1 hour ago вот запрос (сообщение) обрабатывается в своем
-инстансе SM1 обработки вызовов, сделали непосредственно вызов к VM через
-адаптер и SM1 перешла в состояние ожидания результата исполнения. Как
-приходит результат? (edited) Eugene Blikh:press-f-2: 1 hour ago результат
-попадает в общую SM для всех таких сообщений.  дальше он должен понять -
-является ли он ответом на запрос (и если является, то найти SM по
-глобальному списку где будет лежать верный barge-in коллбек, который мы
-исполняем) (edited) Eugene Blikh:press-f-2: 1 hour ago врываемся в нужную
-SM которая ожидает ответа и передаем туда ответ Ruslan Zakirov 1 hour ago
-должен понять != понимает. это то как работает уже?  Eugene
-Blikh:press-f-2: 1 hour ago сейчас это работает через адаптер полностью,
-у нас у сообщения есть понимание того является ли это response или нет
-Eugene Blikh:press-f-2: 1 hour ago а в целом почему не понимает? есть
-какое-то объяснение этому? (edited) Ruslan Zakirov 1 hour ago это != было
-про фразу, что она звучала как что-то незавершенное Ruslan Zakirov 1 hour
-ago звучало как “должен понять, но пока не так…”  Ruslan Zakirov 1 hour
-ago вернись к моему вопросу…  Eugene Blikh:press-f-2: 1 hour ago ну не
-знаю, всегда есть признаки по которым можно понять возможно это не
-проработано и надо прорабатывать для каждого отдельного случая Ruslan
-Zakirov 1 hour ago я говорил про вызов к коду контракта, а не про внешний
-вызов от одного контракта к другому Eugene Blikh:press-f-2: 1 hour ago
-наприер: GetObject -> мы публикуем “response-<objectid>” и ждем ответа ->
-приходит Index/Lifeline в каждом из которых есть objectid -> находим в
-табличке “respnse-<objectid>” и передаем (edited) Eugene Blikh:press-f-2:
-1 hour ago ааааа Eugene Blikh:press-f-2: 1 hour ago простите, недопонял
-Eugene Blikh:press-f-2: 1 hour ago сейчас опишу Ruslan Zakirov 1 hour ago
-выглядит как тоже самое, только без сообщения из сети, а локальное
-создание SM и далее возврат результата через barge-in Eugene
-Blikh:press-f-2: 1 hour ago сейчас все тоже через адаптер Eugene
-Blikh:press-f-2: 1 hour ago но да, в целом ты прав Eugene
-Blikh:press-f-2: 1 hour ago как и сетевая часть Eugene Blikh:press-f-2: 1
-hour ago надо только понимать что ответ может вернуться “сделай мне
-внешний вызов“, а не только “вот результат” (edited) Ruslan Zakirov 1
-hour ago вот это меня тоже интересовало, но это был бы следующий вопрос
-Ruslan Zakirov 1 hour ago когда ты упоминаешь “сейчас через адаптер“, то
-что это значит? ты несколько раз эту фразу написал.  Eugene
-Blikh:press-f-2: 1 hour ago адаптер блокирует исполнение SM пока не
-придет один из двух результатов Eugene Blikh:press-f-2: 1 hour ago а не
-SM запускает вызов через адаптер и засыпает сама в ожидании пока ее
-разбудит Eugene Blikh:press-f-2: 1 hour ago грубо говоря можно уснуть
-пока нас не разбудит адаптер, а можно уснуть пока нас не разбудит другая
-компонента Eugene Blikh:press-f-2: 1 hour ago например через barge-in или
-другую компоненту Eugene Blikh:press-f-2: 1 hour ago
+@eugene.blikh в какой SM обрабатывается вызов? И как эти SM связаны с SM объекта?
+44 replies
+Eugene Blikh:press-f-2:  2 hours ago
+все внешние вызовы попадают сначала в SM из sm_request (в init.go находится роутер сообщение -> тип стейт машины)далее (на примере call method) машина обращается к объекту используя “useSharedObjectInfo” функцию (которая закидывает то что ей нужно сделать в “контекст” объекта, на самом деле которая получает доступ к расшаренному состоянию объекта)
+Ruslan Zakirov  2 hours ago
+перефразирую:
+Ruslan Zakirov  2 hours ago
+сам запрос (сообщение) обрабатывается в своем инстансе SM обработки вызовов, также есть инстанс SM “объектов“, который шарит данные общего доступа для исполнений
+Ruslan Zakirov  2 hours ago
+так?
+Eugene Blikh:press-f-2:  2 hours ago
+все так, да
+Eugene Blikh:press-f-2:  2 hours ago
+а почему вы спрашиваете?
+Ruslan Zakirov  2 hours ago
+хочу понять состояние мира и как привести его к состоянию будущего :slightly_smiling_face:
+Ruslan Zakirov  2 hours ago
+а ты произнес этот вопрос со специальным выговором? :slightly_smiling_face:
+Eugene Blikh:press-f-2:  2 hours ago
+нет, конечно, это было-бы токсично
+Eugene Blikh:press-f-2:  2 hours ago
+Ruslan Zakirov  1 hour ago
+вот запрос (сообщение) обрабатывается в своем инстансе SM1 обработки вызовов, сделали непосредственно вызов к VM через адаптер и SM1 перешла в состояние ожидания результата исполнения. Как приходит результат? (edited)
+Eugene Blikh:press-f-2:  1 hour ago
+результат попадает в общую SM для всех таких сообщений.
+дальше он должен понять - является ли он ответом на запрос (и если является, то найти SM по глобальному списку где будет лежать верный barge-in коллбек, который мы исполняем) (edited)
+Eugene Blikh:press-f-2:  1 hour ago
+врываемся в нужную SM которая ожидает ответа и передаем туда ответ
+Ruslan Zakirov  1 hour ago
+должен понять != понимает. это то как работает уже?
+Eugene Blikh:press-f-2:  1 hour ago
+сейчас это работает через адаптер полностью, у нас у сообщения есть понимание того является ли это response или нет
+Eugene Blikh:press-f-2:  1 hour ago
+а в целом почему не понимает? есть какое-то объяснение этому? (edited)
+Ruslan Zakirov  1 hour ago
+это != было про фразу, что она звучала как что-то незавершенное
+Ruslan Zakirov  1 hour ago
+звучало как “должен понять, но пока не так…”
+Ruslan Zakirov  1 hour ago
+вернись к моему вопросу…
+Eugene Blikh:press-f-2:  1 hour ago
+ну не знаю, всегда есть признаки по которым можно понять
+возможно это не проработано и надо прорабатывать для каждого отдельного случая
+Ruslan Zakirov  1 hour ago
+я говорил про вызов к коду контракта, а не про внешний вызов от одного контракта к другому
+Eugene Blikh:press-f-2:  1 hour ago
+наприер:
+GetObject -> мы публикуем “response-<objectid>” и ждем ответа -> приходит Index/Lifeline в каждом из которых есть objectid -> находим в табличке “respnse-<objectid>” и передаем (edited)
+Eugene Blikh:press-f-2:  1 hour ago
+ааааа
+Eugene Blikh:press-f-2:  1 hour ago
+простите, недопонял
+Eugene Blikh:press-f-2:  1 hour ago
+сейчас опишу
+Ruslan Zakirov  1 hour ago
+выглядит как тоже самое, только без сообщения из сети, а локальное создание SM и далее возврат результата через barge-in
+Eugene Blikh:press-f-2:  1 hour ago
+сейчас все тоже через адаптер
+Eugene Blikh:press-f-2:  1 hour ago
+но да, в целом ты прав
+Eugene Blikh:press-f-2:  1 hour ago
+как и сетевая часть
+Eugene Blikh:press-f-2:  1 hour ago
+надо только понимать что ответ может вернуться “сделай мне внешний вызов“, а не только “вот результат” (edited)
+Ruslan Zakirov  1 hour ago
+вот это меня тоже интересовало, но это был бы следующий вопрос
+Ruslan Zakirov  1 hour ago
+когда ты упоминаешь “сейчас через адаптер“,  то что это значит? ты несколько раз эту фразу написал.
+Eugene Blikh:press-f-2:  1 hour ago
+адаптер блокирует исполнение SM пока не придет один из двух результатов
+Eugene Blikh:press-f-2:  1 hour ago
+а не SM запускает вызов через адаптер и засыпает сама в ожидании пока ее разбудит
+Eugene Blikh:press-f-2:  1 hour ago
+грубо говоря можно уснуть пока нас не разбудит адаптер, а можно уснуть пока нас не разбудит другая компонента
+Eugene Blikh:press-f-2:  1 hour ago
+например через barge-in или другую компоненту
+Eugene Blikh:press-f-2:  1 hour ago
 
 s.ContractRunner.PrepareAsync(<code>).DelayedStart().Sleep().ThenJump(<code>)
 
-дождаться пока адаптер завершит исполнение и затем проснуться Eugene
-Blikh:press-f-2: 1 hour ago ack?  Ruslan Zakirov 1 hour ago хммм Eugene
-Blikh:press-f-2: 1 hour ago я понимаю что это звучит как то, что может
-сбивать с толку, так что буду рад любым вопросам Ruslan Zakirov 1 hour
-ago зачем нам bargin тогда? вызвали адаптер и спим всегда Eugene
-Blikh:press-f-2: 1 hour ago по задумке адаптер может фильтровать
-пропускную способность Eugene Blikh:press-f-2: 1 hour ago если она
-превышает возможную, то тут надо принимать меры Ruslan Zakirov 1 hour ago
-спасибо
+дождаться пока адаптер завершит исполнение и затем проснуться
+Eugene Blikh:press-f-2:  1 hour ago
+ack?
+Ruslan Zakirov  1 hour ago
+хммм
+Eugene Blikh:press-f-2:  1 hour ago
+я понимаю что это звучит как то, что может сбивать с толку, так что буду рад любым вопросам
+Ruslan Zakirov  1 hour ago
+зачем нам bargin тогда? вызвали адаптер и спим всегда
+Eugene Blikh:press-f-2:  1 hour ago
+по задумке адаптер может фильтровать пропускную способность
+Eugene Blikh:press-f-2:  1 hour ago
+если она превышает возможную, то тут надо принимать меры
+Ruslan Zakirov  1 hour ago
 
 #+NAME:
 #+BEGIN_SRC go
     package main
 
-    import ( "fmt" "github.com/pkg/errors" "go/ast" "go/parser"
-        "go/token" "io/ioutil" "os" "reflect" "strings" )
+    import (
+        "fmt"
+        "github.com/pkg/errors"
+        "go/ast"
+        "go/parser"
+        "go/token"
+        "io/ioutil"
+        "os"
+        "reflect"
+        "strings"
+    )
 
-    const ( TemplateDirectory = "templates"
+    const (
+        TemplateDirectory = "templates"
 
-        //filename =
-        "src/github.com/insolar/assured-ledger/ledger-core/v2/conveyor/smachine/ping-pong/example/example_3.go"
-        filename =
-        "src/github.com/insolar/assured-ledger/ledger-core/v2/logicrunner/sm_object/object.go"
-        mainPkg = "main" errorType = "error" MachineTypeGoPlugin )
+        //filename = "src/github.com/insolar/assured-ledger/ledger-core/v2/conveyor/smachine/ping-pong/example/example_3.go"
+        filename = "src/github.com/insolar/assured-ledger/ledger-core/v2/logicrunner/sm_object/object.go"
+        mainPkg   = "main"
+        errorType = "error"
+        MachineTypeGoPlugin
+    )
 
-    type RecvPair struct { Name string Type string } #+END_SRC
+    type RecvPair struct {
+        Name 	string
+        Type 	string
+    }
+#+END_SRC
 
 * Tasks
 
-blins gilses spichki vopros-for-kirill rope docs for:
-- masha
-- ilya Ilya Ozherelyev Запись разговора :)
-- OKR https://docs.google.com/presentation/d/1skBq7QOH4ABE2YqanjkGu1BXJPRq5JNO3cWbwfQC8X8/edit#slide=id.g7670151903_14_683
+blins
+gilses
+electrods
+spichki
+evgenyblich
+vopros-for-kirill
+rope
 
-Ruslan Zakirov Today at 3:54 PM @kirill.ivkushkin @mikhail.glukhov
-@eugene.blikh у нас есть пример в confluence обработки timeout ситуаций
-на конвейере? может в коде?  54 replies Kirill
-Ivkushkin:house_with_garden: 34 minutes ago а для какой ситуации?
-(edited) Ruslan Zakirov 34 minutes ago ушли в адаптер, ждем сообщения с
-ответом, timeout на это ожидание Kirill Ivkushkin:house_with_garden: 33
-minutes ago а зачем?  Kirill Ivkushkin:house_with_garden: 33 minutes ago
-придёт пульс и всё решит Kirill Ivkushkin:house_with_garden: 33 minutes
-ago или ты про опрос пред VE? (edited) Ruslan Zakirov 33 minutes ago
-получение стейта от VE(P-1) Kirill Ivkushkin:house_with_garden: 33
-minutes ago ага, тогда ща Ruslan Zakirov 31 minutes ago стоп, а чем этот
-кейс отличается от других и почему не “придёт пульс и всё решит“?
-:slightly_smiling_face: (edited) Eugene Blikh:press-f-2: 31 minutes ago
-было решено оставлять блокирующие адаптеры?  Kirill
-Ivkushkin:house_with_garden: 32 minutes ago никаких блокирующих Ruslan
-Zakirov 31 minutes ago нет, не блокирующие Ruslan Zakirov 31 minutes ago
-под “ждем” я имел ввиду стейт SM, а не блокировку в адаптере Kirill
-Ivkushkin:house_with_garden: 30 minutes ago этот кейс отличается тем, что
-тут речь о параллелизмне разных запросов состояния, но для оптимизации,
-надо один из запросов задержать Kirill Ivkushkin:house_with_garden: 30
-minutes ago чтобы не создавать лишней "движухи" Kirill
-Ivkushkin:house_with_garden: 29 minutes ago т.е. здесь не таймаут на
-ожидание ответа (таких не должно быть), а таймаут на ожидание перед
-отправкой / следующим шагом Kirill Ivkushkin:house_with_garden: 29
-minutes ago так вот Kirill Ivkushkin:house_with_garden: 29 minutes ago
-про ожидание Kirill Ivkushkin:house_with_garden: 29 minutes ago
+Ruslan Zakirov Today at 3:54 PM
+@kirill.ivkushkin @mikhail.glukhov @eugene.blikh у нас есть пример в confluence обработки timeout ситуаций на конвейере? может в коде?
+54 replies
+Kirill Ivkushkin:house_with_garden:  34 minutes ago
+а для какой ситуации? (edited)
+Ruslan Zakirov  34 minutes ago
+ушли в адаптер, ждем сообщения с ответом, timeout на это ожидание
+Kirill Ivkushkin:house_with_garden:  33 minutes ago
+а зачем?
+Kirill Ivkushkin:house_with_garden:  33 minutes ago
+придёт пульс и всё решит
+Kirill Ivkushkin:house_with_garden:  33 minutes ago
+или ты про опрос пред VE? (edited)
+Ruslan Zakirov  33 minutes ago
+получение стейта от VE(P-1)
+Kirill Ivkushkin:house_with_garden:  33 minutes ago
+ага, тогда ща
+Ruslan Zakirov  31 minutes ago
+стоп, а чем этот кейс отличается от других и почему не “придёт пульс и всё решит“? :slightly_smiling_face: (edited)
+Eugene Blikh:press-f-2:  31 minutes ago
+было решено оставлять блокирующие адаптеры?
+Kirill Ivkushkin:house_with_garden:  32 minutes ago
+никаких блокирующих
+Ruslan Zakirov  31 minutes ago
+нет, не блокирующие
+Ruslan Zakirov  31 minutes ago
+под “ждем” я имел ввиду стейт SM, а не блокировку в адаптере
+Kirill Ivkushkin:house_with_garden:  30 minutes ago
+этот кейс отличается тем, что тут речь о параллелизмне разных запросов состояния, но для оптимизации, надо один из запросов задержать
+Kirill Ivkushkin:house_with_garden:  30 minutes ago
+чтобы не создавать лишней "движухи"
+Kirill Ivkushkin:house_with_garden:  29 minutes ago
+т.е. здесь не таймаут на ожидание ответа (таких не должно быть), а таймаут на ожидание перед отправкой / следующим шагом
+Kirill Ivkushkin:house_with_garden:  29 minutes ago
+так вот
+Kirill Ivkushkin:house_with_garden:  29 minutes ago
+про ожидание
+Kirill Ivkushkin:house_with_garden:  29 minutes ago
 https://insolar.atlassian.net/wiki/spaces/DEV/pages/1092452459/Core+v2+-+Conveyor+-+Brief+Intro+Example#%D0%9F%D0%BE%D0%B2%D1%82%D0%BE%D1%80-%D1%82%D0%B5%D0%BA%D1%83%D1%89%D0%B5%D0%B3%D0%BE-%D1%88%D0%B0%D0%B3%D0%B0-(Repeat)
-Kirill Ivkushkin:house_with_garden: 28 minutes ago см второй пример кода
-Kirill Ivkushkin:house_with_garden: 28 minutes ago где WaitAnyUntil
-Ruslan Zakirov 25 minutes ago Посмотрел Ruslan Zakirov 21 minutes ago Я
-не помню как ctx.WaitAnyUntil прерывается ответом?  Ruslan Zakirov 21
-minutes ago И еще Ruslan Zakirov 21 minutes ago Как ThenRepeatOrJump
-выбирает что сделать. Repeate или Jump?  Kirill
-Ivkushkin:house_with_garden: 20 minutes ago если надо что-то проверять
-при ожидании (например наличие ответа), то надо или завести соотв флаг и
-его проверять в начале метода, или проверять счётчик запросов - см тут
-https://insolar.atlassian.net/wiki/spaces/DEV/pages/1092452459/Core+v2+-+Conveyor+-+Brief+Intro+Example#%D0%9F%D0%BE%D0%BB%D1%83%D1%87%D0%B5%D0%BD%D0%B8%D0%B5-%D1%80%D0%B5%D0%B7%D1%83%D0%BB%D1%8C%D1%82%D0%B0%D1%82%D0%B0
-Kirill Ivkushkin:house_with_garden: 19 minutes ago т.е. код будет а-ля
-Kirill Ivkushkin:house_with_garden: 16 minutes ago Untitled
 
-func (p *PlayerSM) stepNextGame(ctx smachine.ExecutionContext)
-smachine.StateUpdate {
+Kirill Ivkushkin:house_with_garden:  28 minutes ago
+см второй пример кода
+Kirill Ivkushkin:house_with_garden:  28 minutes ago
+где WaitAnyUntil
+Ruslan Zakirov  25 minutes ago
+Посмотрел
+Ruslan Zakirov  21 minutes ago
+Я не помню как ctx.WaitAnyUntil прерывается ответом?
+Ruslan Zakirov  21 minutes ago
+И еще
+Ruslan Zakirov  21 minutes ago
+Как ThenRepeatOrJump выбирает что сделать. Repeate или Jump?
+Kirill Ivkushkin:house_with_garden:  20 minutes ago
+если надо что-то проверять при ожидании (например наличие ответа), то надо или завести соотв флаг и его проверять в начале метода, или проверять счётчик запросов - см тут https://insolar.atlassian.net/wiki/spaces/DEV/pages/1092452459/Core+v2+-+Conveyor+-+Brief+Intro+Example#%D0%9F%D0%BE%D0%BB%D1%83%D1%87%D0%B5%D0%BD%D0%B8%D0%B5-%D1%80%D0%B5%D0%B7%D1%83%D0%BB%D1%8C%D1%82%D0%B0%D1%82%D0%B0
+Kirill Ivkushkin:house_with_garden:  19 minutes ago
+т.е. код будет а-ля
+Kirill Ivkushkin:house_with_garden:  16 minutes ago
+Untitled
 
+func (p *PlayerSM) stepNextGame(ctx smachine.ExecutionContext) smachine.StateUpdate {
   ...
 
     // take a small break
 
-    sleepUntil := time.Now().Add(time.Millisecond *
-    time.Duration(rand.Intn(500)))
+    sleepUntil := time.Now().Add(time.Millisecond * time.Duration(rand.Intn(500)))
 
     // here we use closure to avoid putting (sleepUntil) into SM's state
 
-    return ctx.Jump(func(ctx smachine.ExecutionContext)
-    smachine.StateUpdate {
+    return ctx.Jump(func(ctx smachine.ExecutionContext) smachine.StateUpdate {
 
         if p.hasState {
 
@@ -798,54 +878,65 @@ smachine.StateUpdate {
 
         }
 
-        return
-        ctx.WaitAnyUntil(sleepUntil).ThenRepeatOrJump(p.stepFindPair)
+        return ctx.WaitAnyUntil(sleepUntil).ThenRepeatOrJump(p.stepFindPair)
 
     })
 
 }
 
-Ruslan Zakirov 15 minutes ago Эту часть я понял. Ты повторил пример кода
-из confluence.  Kirill Ivkushkin:house_with_garden: 14 minutes ago я
-вписал if Ruslan Zakirov 14 minutes ago ок Kirill
-Ivkushkin:house_with_garden: 14 minutes ago
+Ruslan Zakirov  15 minutes ago
+Эту часть я понял. Ты повторил пример кода из confluence.
+Kirill Ivkushkin:house_with_garden:  14 minutes ago
+я вписал if
+Ruslan Zakirov  14 minutes ago
+ок
+Kirill Ivkushkin:house_with_garden:  14 minutes ago
 
-       if p.hasState { return ctx.Jump(p.stateIsReady) }
+       if p.hasState {
+            return ctx.Jump(p.stateIsReady)
+        }
 
-Ruslan Zakirov 14 minutes ago вижу Ruslan Zakirov 12 minutes ago не
-отвечает на вопрос “как ctx.WaitAnyUntil прерывается ответом?“, то есть
-не понятно почему мы не будем ждать лишнее время в этом Wait, когда
-“ответ” нам доставили Kirill Ivkushkin:house_with_garden: 12 minutes ago
-по ответу сработает callback, внутри callback ты поставишь флаг и
-сделаешь WakeUp и SM будет активирована сразу, проверит флаг и пойдёт по
-своим делам дальше (edited) Kirill Ivkushkin:house_with_garden: 11
-minutes ago там внутри в этой функции нету sleep'а (edited) Ruslan
-Zakirov 9 minutes ago пока понятно Ruslan Zakirov 10 minutes ago callback
-я регаю где? в bargein? (блин никак не запомню спелинг) (edited) Kirill
-Ivkushkin:house_with_garden: 9 minutes ago если для побудки из вне, то
-да, через bargeIn Kirill Ivkushkin:house_with_garden: 7 minutes ago можно
-даже жёстче - можно сделать bargeIn с джампом Kirill
-Ivkushkin:house_with_garden: 6 minutes ago и привязать к шагу Ruslan
-Zakirov 6 minutes ago прикольно Ruslan Zakirov 6 minutes ago достаточно
-Mikhail Glukhov 5 minutes ago я не понял, как сделать bargein с джампом и
-почему это сработает, но хочу понять Kirill Ivkushkin:house_with_garden:
-5 minutes ago
-
-NewBargeInThisStepOnly().WithJump(...)
-
-(edited) Kirill Ivkushkin:house_with_garden: 4 minutes ago соотв, шаг не
-сменился, вызов bargein пробудит машину и принудительно поменяет ей шаг
-Kirill Ivkushkin:house_with_garden: 4 minutes ago но если шаг сменился
-(от того, где был создан такой bargeIn), то такой bargein будет
-проигнорен (edited) Kirill Ivkushkin:house_with_garden: 3 minutes ago это
-не почему - это как :slightly_smiling_face: Kirill
-Ivkushkin:house_with_garden: 3 minutes ago так он себя ведёт Ruslan
-Zakirov 2 minutes ago я приблизительно понял про bargein с фиксированным
-шагом Kirill Ivkushkin:house_with_garden: 1 minute ago тоже самое можно и
-для вызова адаптера Ruslan Zakirov 1 minute ago “т.е. здесь не таймаут на
-ожидание ответа (таких не должно быть), а таймаут на ожидание перед
-отправкой / следующим шагом” - это ты имел ввиду, что мы должны подождать
-прежде чем шлем VStateRequest к VE(P-1), а вдруг сам пришлет?  Kirill
-Ivkushkin:house_with_garden: 1 minute ago ага Ruslan Zakirov < 1 minute
-ago ок, я отмечу Kirill Ivkushkin:house_with_garden: < 1 minute ago
-спасибо
+Ruslan Zakirov  14 minutes ago
+вижу
+Ruslan Zakirov  12 minutes ago
+не отвечает на вопрос “как ctx.WaitAnyUntil прерывается ответом?“, то есть не понятно почему мы не будем ждать лишнее время в этом Wait, когда “ответ” нам доставили
+Kirill Ivkushkin:house_with_garden:  12 minutes ago
+по ответу сработает callback, внутри callback ты поставишь флаг и сделаешь WakeUp и SM будет активирована сразу, проверит флаг и пойдёт по своим делам дальше (edited)
+Kirill Ivkushkin:house_with_garden:  11 minutes ago
+там внутри в этой функции нету sleep'а (edited)
+Ruslan Zakirov  9 minutes ago
+пока понятно
+Ruslan Zakirov  10 minutes ago
+callback я регаю где? в bargein? (блин никак не запомню спелинг) (edited)
+Kirill Ivkushkin:house_with_garden:  9 minutes ago
+если для побудки из вне, то да, через bargeIn
+Kirill Ivkushkin:house_with_garden:  7 minutes ago
+можно даже жёстче - можно сделать bargeIn с джампом
+Kirill Ivkushkin:house_with_garden:  6 minutes ago
+и привязать к шагу
+Ruslan Zakirov  6 minutes ago
+прикольно
+Ruslan Zakirov  6 minutes ago
+достаточно
+Mikhail Glukhov  5 minutes ago
+я не понял, как сделать bargein с джампом и почему это сработает, но хочу понять
+Kirill Ivkushkin:house_with_garden:  5 minutes ago
+(edited)
+Kirill Ivkushkin:house_with_garden:  4 minutes ago
+соотв, шаг не сменился, вызов bargein пробудит машину и принудительно поменяет ей шаг
+Kirill Ivkushkin:house_with_garden:  4 minutes ago
+но если шаг сменился (от того, где был создан такой bargeIn), то такой bargein будет проигнорен (edited)
+Kirill Ivkushkin:house_with_garden:  3 minutes ago
+это не почему - это как :slightly_smiling_face:
+Kirill Ivkushkin:house_with_garden:  3 minutes ago
+так он себя ведёт
+Ruslan Zakirov  2 minutes ago
+я приблизительно понял про bargein с фиксированным шагом
+Kirill Ivkushkin:house_with_garden:  1 minute ago
+тоже самое можно и для вызова адаптера
+Ruslan Zakirov  1 minute ago
+“т.е. здесь не таймаут на ожидание ответа (таких не должно быть), а таймаут на ожидание перед отправкой / следующим шагом” - это ты имел ввиду, что мы должны подождать прежде чем шлем VStateRequest к VE(P-1), а вдруг сам пришлет?
+Kirill Ivkushkin:house_with_garden:  1 minute ago
+ага
+Ruslan Zakirov  < 1 minute ago
+ок, я отмечу
