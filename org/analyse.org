@@ -554,11 +554,26 @@ Variant - это структура, которая представляет [TO
     SlotStep, указывающая на миграцию (об этом позже в этом разделе)
 - *ast.CallExpr - это варианты:
   - ctx.Sleep().ThenRepeat()
-  - someasync.DelayedStartSleep().ThenJump(smth) [TODO:gmm] - Как это работает?
+  - someasync.DelayedStartSleep().ThenJump(smth)
+~X~ превращается в свое строковое представление и сохраняется в
+~item.Var.Obj~. Здесь можно было бы добавить дополнительный разбор его на
+составляющие, но более ценную информацию можно получить из аргументов
+~return statement CallExpr~ (и ее пока хватает для устранения любых
+неоднозначностей)
 
-[TODO:gmm] - Для целей разбора миграции нам как раз нужен SlotStep
+Поэтому, сейчас мы переходим к разбору этих аргументов.
 
-[TODO:gmm] - Далее мы разбираем аргументы return statement - продолжит описание
+Аргументы бывают разных типов:
+- отсутствующий аргумент не имеет типа, например в ~ctx.Stop()~,
+  ~ctx.Sleep()~, ~ctx.ThenJump()~ или ~ctx.Sleep().ThenRepeat()~
+- ~*ast.SelectorExpr~ - это как правило ~target~ для
+  ~ctx.Jump(sm.target)~
+- ~*ast.CompositeLit~ - встречается только ~ctx.JumpExt(SlotStep)~,
+  содержит Transition и Migration. Transition - это собственно переход, а
+  Migration заменяет текущую миграцию ([TODO:gmm] - уточнить, только в этом
+  состоянии или насовсем заменяет). Я пока сохраняю Transition в переход,
+  а c Migration ничего не делаю, потому что еще думаю, как отследить
+  изменения миграции.
 
 #+NAME: collect_rets
 #+BEGIN_SRC go
@@ -607,7 +622,7 @@ Variant - это структура, которая представляет [TO
                                   item.Var.Fun, item.Var.Obj, item.Var.Fun)
                           }
                       default:
-                          fmt.Printf("\nERR: UNKNOWN RETSELECTOR %s | ",
+                          fmt.Printf("\n:collectRets: [ERR]: UNKNOWN RETSELECTOR %s | ",
                               reflect.TypeOf(retSelector.X),
                               pf.code[retSelector.X.Pos()-1:retSelector.X.End()-1],
                           )
@@ -616,25 +631,16 @@ Variant - это структура, которая представляет [TO
                       // Args
                       accArgs := make([]Variant, 0)
                       for _, retarg := range retCall.Args {
-                          /// fmt.Printf("\n   -:collectRet: arg type [%s]", reflect.TypeOf(retarg))
+                          pf.diag("\n   -:collectRet: arg type [%s]", reflect.TypeOf(retarg))
                           switch retarg.(type) {
                           case *ast.SelectorExpr:
                               sel := retarg.(*ast.SelectorExpr)
                               selName := fmt.Sprintf("%s", pf.code[sel.X.Pos()-1:sel.X.End()-1])
-                              /// fmt.Printf("\n   -|[%s] %s .|. %s", reflect.TypeOf(sel), selName, sel.Sel.Name)
+                              pf.diag("\n   -|[%s] %s .|. %s", reflect.TypeOf(sel), selName, sel.Sel.Name)
                               arg := Variant{
                                   Type: SelectorType,
                                   Obj:  selName,
                                   Fun:  sel.Sel.Name,
-                              }
-                              accArgs = append(accArgs, arg)
-                          case *ast.Ident:
-                              idn := retarg.(*ast.Ident)
-                              /// fmt.Printf("\n   -|[%s] %s", reflect.TypeOf(idn), idn.Name)
-                              //arg := fmt.Sprintf("%s", idn.Name)
-                              arg := Variant{
-                                  Type: StringType,
-                                  Str:  idn.Name,
                               }
                               accArgs = append(accArgs, arg)
                           case *ast.CompositeLit:
@@ -645,7 +651,9 @@ Variant - это структура, которая представляет [TO
                                   ast.Inspect(cl, func(n ast.Node) bool {
                                       exp, ok := n.(*ast.KeyValueExpr)
                                       if ok {
-                                          if "Transition" == fmt.Sprintf("%s", exp.Key) {
+                                          keystr := fmt.Sprintf("%s", exp.Key)
+                                          switch keystr {
+                                          case "Transition":
                                               sel := exp.Value.(*ast.SelectorExpr)
                                               selName := fmt.Sprintf("%s", pf.code[sel.X.Pos()-1:sel.X.End()-1])
                                               arg = Variant{
@@ -653,30 +661,40 @@ Variant - это структура, которая представляет [TO
                                                   Obj:  selName,
                                                   Fun:  sel.Sel.Name,
                                               }
-                                              /// fmt.Printf("\n   -| %s.%s", selName, sel.Sel.Name)
+                                              pf.diag("\n   -| -transition: %s.%s", selName, sel.Sel.Name)
+                                          case "Migration":
+                                              // sel := exp.Value.(*ast.SelectorExpr)
+                                              // selName := fmt.Sprintf("%s", pf.code[sel.X.Pos()-1:sel.X.End()-1])
+                                              // arg = Variant{
+                                              //     Type: SelectorType,
+                                              //     Obj:  selName,
+                                              //     Fun:  sel.Sel.Name,
+                                              // }
+                                              pf.diag("\n   -| --migration: %s.%s", selName, sel.Sel.Name)
+                                          default:
+                                              pf.diag("\n:collectRets: [ERR]: UNKNOWN keystr [%s]", keystr)
                                           }
                                       }
                                       return true
-                                  })
+                                  }) // end of Inspect
                               } else {
-                                  fmt.Printf("\n:collectRets: [ERR]: INK JumpExt transition")
+                                  pf.diag("\n:collectRets: [ERR]: UNK JumpExt transition")
                               }
                               accArgs = append(accArgs, arg)
                           default:
-                              pf.diag("\nERR: UNKNOWN RETARGtype [%s] :OF: %s", reflect.TypeOf(retarg), retarg)
+                              pf.diag("\n:collectRets: [ERR]: UNKNOWN RETARGtype [%s] :OF: %s", reflect.TypeOf(retarg), retarg)
                           }
-                      }
+                      } // end of args
                       item.Args = accArgs
                   default:
-                      pf.diag("\nERR: UNKNOWN RETSEL %s", fmt.Sprintf("%s", reflect.TypeOf(retCall.Fun)))
+                      pf.diag("\n:collectRets: [ERR]: UNKNOWN RETSEL %s", fmt.Sprintf("%s", reflect.TypeOf(retCall.Fun)))
                   }
               default:
-                  pf.diag("\nERR: UNKNOWN TYPE OF RETNODE %s", fmt.Sprintf("%s", reflect.TypeOf(retNode)))
-              }
+                  pf.diag("\n [ERR]: UNKNOWN TYPE OF RETNODE %s", fmt.Sprintf("%s", reflect.TypeOf(retNode)))
+              } // end of switch retnode type
           }
           acc = append(acc, item)
       }
       return acc
   }
-
 #+END_SRC
