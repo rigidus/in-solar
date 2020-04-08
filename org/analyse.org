@@ -52,24 +52,15 @@ plantuml-построитель, но пока мне удобнее видет�
 
   const (
       <<consts>>
-
-      MistakeType = 1 + iota
-
-      // type-ids for Variant struct
-      SelectorType
-      StringType
-
-      // type-ids for Ret struct
-      RetTypeCall
   )
 
   <<structs>>
 
   func main () {
       uml := analyse(filename)
-      uml += "uml" // rem
-      fmt.Printf("\n") // rem
-      //fmt.Printf("\n\n\n\n\n~~~~~~~~~~~~~~~~~\n%s", uml)
+      // uml += "uml" // rem
+      // fmt.Printf("\n") // rem
+      fmt.Printf("\n\n\n\n\n~~~~~~~~~~~~~~~~~\n%s", uml)
   }
 
   <<analyse>>
@@ -83,19 +74,6 @@ plantuml-построитель, но пока мне удобнее видет�
 
 #+NAME: analyse
 #+BEGIN_SRC go :noweb yes
-  func (v Variant) Show() string {
-      switch v.Type {
-      case MistakeType:
-          return fmt.Sprintf("MistakeType")
-      case SelectorType:
-          return fmt.Sprintf("(. %s %s)", v.Obj, v.Fun)
-      case StringType:
-          return fmt.Sprintf("%s", v.Str)
-      default:
-          return "Impossible Error"
-      }
-  }
-
   func analyse(filename string) string {
       pathname := fmt.Sprintf("%s/%s", os.Getenv("GOPATH"), filename)
       pf := ParseFile(pathname, true)
@@ -107,49 +85,42 @@ plantuml-построитель, но пока мне удобнее видет�
       pf.diag("\n\n:: ======= resource filename: %s", pf.filename)
 
       for _, state := range pf.states {
-          if pf.dbg {
-              pf.diag("\n\nfn: %s", state.Name) // Function name
-              // pf.diag("\nrecv: %s | %s", state.Recv.Name, state.Recv.Type) // Receiver
-              for parName, parType := range state.Pars { // Parameters
-                  pf.diag("\npar name: %s | type: %s", parName, parType)
-              }
+          pf.diag("\n\nfn: %s", state.Name) // Function name
+          // pf.diag("\nrecv: %s | %s", state.Recv.Name, state.Recv.Type) // Receiver
+          for parName, parType := range state.Pars { // Parameters
+              pf.diag("\npar name: %s | type: %s", parName, parType)
           }
           for _, item := range state.Rets {
-              if pf.dbg {
-                  fmt.Printf("\n%s: ['%s']", item.Lvl, item.Str)
-              }
+              pf.diag("\n%s: ['%s']", item.Lvl, item.Str)
+              pf.diag("\nfun: ['%s']\nobj: ['%s']", item.Var.Fun, item.Var.Obj)
               // dbg
               //uml += fmt.Sprintf("\n ! %s | %s", item.Type, item.Var.Fun)
-              switch item.Type {
-              case RetTypeCall:
-                  switch item.Var.Fun {
-                  case "Stop":
-                      uml += fmt.Sprintf("\n%s --> [*]", state.Name)
-                  case "Jump":
-                      uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
-                  case "ThenJump":
-                      uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
-                  case "JumpExt":
-                      uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
-                  case "ThenRepeat":
-                      uml += fmt.Sprintf("\n%s --> %s : ThenRepeat", state.Name, state.Name)
-                  case "RepeatOrJumpElse":
-                      uml += fmt.Sprintf("\n%s -[#RoyalBlue]-> %s : RepeatOr(Jump)Else", state.Name, item.Args[2].Fun)
-                      uml += fmt.Sprintf("\n%s -[#DarkGreen]-> %s : RepeatOrJump(Else)", state.Name, item.Args[3].Fun)
-                  default:
-                      pf.diag("\n(=> (. %s %s)", item.Var.Obj, item.Var.Fun)
-                      for _, arg := range item.Args {
-                          pf.diag("\n       %s", arg.Show())
-                      }
-                      pf.diag(")")
-                  }
+              switch item.Var.Fun {
+              case "Stop":
+                  uml += fmt.Sprintf("\n%s --> [*]", state.Name)
+              case "Jump":
+                  uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
+              case "ThenJump":
+                  uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
+              case "JumpExt":
+                  uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
+              case "ThenRepeat":
+                  uml += fmt.Sprintf("\n%s --> %s : ThenRepeat", state.Name, state.Name)
+              case "RepeatOrJumpElse":
+                  uml += fmt.Sprintf("\n%s -[#RoyalBlue]-> %s : RepeatOr(Jump)Else", state.Name, item.Args[2].Fun)
+                  uml += fmt.Sprintf("\n%s -[#DarkGreen]-> %s : RepeatOrJump(Else)", state.Name, item.Args[3].Fun)
               default:
-                  pf.diag( "\nError: Unknown RetType: %d", item.Type)
+                  pf.diag("\n(=> (. %s %s)", item.Var.Obj, item.Var.Fun)
+                  for _, arg := range item.Args {
+                      pf.diag("\n       %s", fmt.Sprintf("(. %s %s)", arg.Obj, arg.Fun))
+                  }
+                  pf.diag(")")
               }
+
               // -:- fn representation
               fmt.Printf("\n(-> (. %s %s)", item.Var.Obj, item.Var.Fun)
               for _, arg := range item.Args {
-                  pf.diag("\n       %s", arg.Show())
+                  pf.diag("\n       %s", fmt.Sprintf("(. %s %s)", arg.Obj, arg.Fun))
               }
               pf.diag(")")
           }
@@ -286,7 +257,6 @@ plantuml-построитель, но пока мне удобнее видет�
   type Ret struct {
       Lvl  string
       Str  string
-      Type int
       Var  Variant
       Args []Variant
   }
@@ -300,7 +270,6 @@ Variant - это структура, которая представляет [TO
 #+NAME: variant
 #+BEGIN_SRC go :noweb-ref structs
   type Variant struct {
-      Type int
       Obj  string
       Fun  string
       Str  string // string representation
@@ -511,6 +480,8 @@ Variant - это структура, которая представляет [TO
 Существуют простые return statements, вроде ~ctx.Stop()~ или
 ~ctx.Jump(smth)~.
 
+
+
 Более сложные случаи - это варианты ~ctx.JumpExt~, которые выглядят так:
 
 #+BEGIN_SRC go
@@ -519,6 +490,8 @@ Variant - это структура, которая представляет [TO
       Migration:  sm.migrateSendStateAfterExecution,
   })
 #+END_SRC
+
+
 
 И наконец, наиболее объемные вот такие простыни:
 
@@ -585,7 +558,6 @@ Variant - это структура, которая представляет [TO
           for _, retNode := range retStmt.Results {
               switch retNode.(type) {
               case *ast.CallExpr:
-                  item.Type = RetTypeCall
                   retCall := retNode.(*ast.CallExpr)
                   switch retCall.Fun.(type) {
                   case *ast.SelectorExpr:
@@ -634,7 +606,6 @@ Variant - это структура, которая представляет [TO
                               selName := fmt.Sprintf("%s", pf.code[sel.X.Pos()-1:sel.X.End()-1])
                               pf.diag("\n   -|[%s] %s .|. %s", reflect.TypeOf(sel), selName, sel.Sel.Name)
                               arg := Variant{
-                                  Type: SelectorType,
                                   Obj:  selName,
                                   Fun:  sel.Sel.Name,
                               }
@@ -653,7 +624,6 @@ Variant - это структура, которая представляет [TO
                                               sel := exp.Value.(*ast.SelectorExpr)
                                               selName := fmt.Sprintf("%s", pf.code[sel.X.Pos()-1:sel.X.End()-1])
                                               arg = Variant{
-                                                  Type: SelectorType,
                                                   Obj:  selName,
                                                   Fun:  sel.Sel.Name,
                                               }

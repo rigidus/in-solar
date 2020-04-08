@@ -821,12 +821,14 @@ Ruslan Zakirov  1 hour ago
 
 blins
 gilses
-electrods
 spichki
-evgenyblich
-vopros-for-kirill
 rope
+OKR
+evgenyblich
 
+* Dialogs
+
+** 1
 Ruslan Zakirov Today at 3:54 PM
 @kirill.ivkushkin @mikhail.glukhov @eugene.blikh у нас есть пример в confluence обработки timeout ситуаций на конвейере? может в коде?
 54 replies
@@ -965,3 +967,471 @@ Kirill Ivkushkin:house_with_garden:  1 minute ago
 ага
 Ruslan Zakirov  < 1 minute ago
 ок, я отмечу
+
+** 2
+
+Mikhail Glukhov Today at 3:09 PM
+Ссылаются ли JetDrop-ы друг на друга (и делают ли это они через цепочки ссылок на хэши если да)?
+
+
+
+
+
+Kirill Ivkushkin  3 hours ago
+ну говорили ж два часа назад :slightly_smiling_face:
+
+Kirill Ivkushkin  3 hours ago
+в v1 записи ссылаются (образуют цепочки) друг на друга, и в том числе между разными дропами, но дропы - не ссылаются друг на друга (edited)
+
+Kirill Ivkushkin  3 hours ago
+в v2 дропы будут ссылаться друг на друга (образовывать цепочки) (edited)
+
+Mikhail Glukhov  3 hours ago
+Таким образом, имея один дроп, я могу проверить целостность предыдущих? Т.е. следующий дроп имеет ссылку на хэш предыдущего подписанного дропа? (просто уточнить для ясности) (edited)
+
+Kirill Ivkushkin  3 hours ago
+ты про какую версию?
+
+Mikhail Glukhov  3 hours ago
+v2
+
+Kirill Ivkushkin  3 hours ago
+да
+
+Mikhail Glukhov  3 hours ago
+спс. Пользуясь случаем, хочу спросить про OKR - я же могу перенести туда цели из доки "задачи для михаила"?
+
+Mikhail Glukhov  3 hours ago
+Также в продолжении темы с Jet хочу проверить свое понимание:
+JetDrop содержит изменения всех объектов для конкретного Jet-а? Т.е. если LME в этом пульсе хостит три Jet-а, в двух из них объекты изменились, то будет два JetDrop-а на HMN по окончании пульса?
+JetDrop скидывается на HMN до или после окончания 15-и пульсов stash-периода (я везде предполагал, что сразу после окончания пульса, но уточнить не лишне)
+
+Kirill Ivkushkin  3 hours ago
+будет три jet drop'а, один только со служебными записями
+
+Kirill Ivkushkin  3 hours ago
+2. скидывается сразу, во время пульса, при получении записей (edited)
+
+Mikhail Glukhov  3 hours ago
+что это за служебные записи?
+таким образом я могу иметь несколько JetDrop-ов по одному объекту (или Jet-у) на протяжении пульса?
+
+Kirill Ivkushkin  3 hours ago
+начало блока, конец блока и т.п.
+это полная бессмыслица
+
+Mikhail Glukhov  3 hours ago
+понял
+Сценарий, который я считал правильным несколько минут назад:
+начался пульс
+VE выполнил первый реквест, изменил состояние объекта А, сохранил данные на LME
+тот же VE выполнил второй реквест, опять изменил состояине объекта A, опять сохранил данные на LME
+закончился пульс
+LME сбросил JetDrop на HMN в котором оба изменения по объекту A
+а как на самом деле?
+
+Kirill Ivkushkin  3 hours ago
+это описание верное
+
+Kirill Ivkushkin  3 hours ago
+но как оно связано с
+"таким образом я могу иметь несколько JetDrop-ов по одному объекту (или Jet-у) на протяжении пульса?"
+
+Mikhail Glukhov  3 hours ago
+я воспринял "скидывается сразу, во время пульса, при получении записей" как противоречие к этому сценарию. неправильно понял?
+
+Kirill Ivkushkin  3 hours ago
+для объекта всегда существует единственный jet, в джете на пуль всегда существует единственный jet drop
+
+Mikhail Glukhov  3 hours ago
+2. понял, спс
+
+Kirill Ivkushkin  3 hours ago
+а то что jet drop в горячем режиме реплицируется, это не создаёт несколько jet drop'ов
+
+Kirill Ivkushkin  3 hours ago
+'nj cjplf`n njkmrj ytcrjkmrj tuj rjgbq
+
+Kirill Ivkushkin  3 hours ago
+это создаёт только несколько его копий
+
+Mikhail Glukhov  2 hours ago
+3. Если JetDrop-ы в v2 ссылаются друг на друга, то как это согласовать с JetSplit и JetMerge? Мое предположение - если Jet рассплитился - это не оказывает влияния на Ref, потому что это коссвенный Ref, т.е. данные будут найдены через JetTree. (Вопрос возник предполагаю из-за того, что в энвайрменте видят Ref как {JetID}:{JetDropId}
+
+Mikhail Glukhov  2 hours ago
+(В дополнение к предыдущим вопросам): почему мы не экономим на JetDrop-ах к Jet-ам объекты которых не подверглись изменениям на этом пульсе? Должна быть какая-то причина (edited)
+
+Kirill Ivkushkin  1 hour ago
+а при чем тут вообще ref'ы? (edited)
+
+Kirill Ivkushkin  1 hour ago
+а по поводу экономии - ответ в твоём же вопросе #3
+
+Mikhail Glukhov  1 hour ago
+Если JetDrop-ы ссылаются друг на друга, то они должны как-то делать это таким образом чтобы это было совместимым со сплитами и мерджами. Ок, я получил подтверждение по №3
+
+Kirill Ivkushkin  1 hour ago
+то, как jetdrop'ы друг на друга ссылаются, это никак не связано с объектами
+
+Kirill Ivkushkin  1 hour ago
+сцепление вагонов с составе никак не зависит от нумерации коробок, которые в них загружены
+
+Mikhail Glukhov  1 hour ago
+а как они ссылаются?
+
+Kirill Ivkushkin  1 hour ago
+у меня есть стойкое впечатление, что говоря про ссылаются ты не различаешь - идентификацию и адресацию
+
+Mikhail Glukhov  1 hour ago
+Есть ли у нас тип Ref-to-JetDrop или что-то подобное?
+
+Kirill Ivkushkin  1 hour ago
+Ref на дроп может быть, но ref'ы это сущности для логики, обслуживающей контракты
+
+Kirill Ivkushkin  1 hour ago
+вот скажи - в биткойне у тебя блоки без ref'ов же ссылать могут? (edited)
+
+Mikhail Glukhov  1 hour ago
+да, там ссылка на хэши
+хочу больше узнать про то как ссылаться на разные сущности
+
+Kirill Ivkushkin  1 hour ago
+только там не ссылки
+
+Kirill Ivkushkin  1 hour ago
+в чём отличие URI, URN и URL?
+
+Mikhail Glukhov  1 hour ago
+URI - идентификатор, URL - локатор, можно найти
+
+Kirill Ivkushkin  1 hour ago
+отлично
+
+Mikhail Glukhov  1 hour ago
+URN - имя
+
+Kirill Ivkushkin  1 hour ago
+хэш пред блока это что из этих трёх?
+
+Mikhail Glukhov  1 hour ago
+идент
+
+Kirill Ivkushkin  1 hour ago
+правильно, а для работы контрактов надо чтобы ссылки были загружаемы
+
+Kirill Ivkushkin  1 hour ago
+соотв Reference это URL
+
+Kirill Ivkushkin  1 hour ago
+а ссылки между блоками и записями это URI
+
+Mikhail Glukhov  1 hour ago
+таким образом нам нужны два типа?
+
+Kirill Ivkushkin  1 hour ago
+jetdrop сам никогда не пойдёт получать другой джетдроп, ему пофигу
+
+Kirill Ivkushkin  1 hour ago
+так у нас и есть несколько типов
+
+Kirill Ivkushkin  1 hour ago
+просто для ссылки между drop'ами там будет свой URI, а сами дропы имеют ещё URI глобальный и URL для контрактов
+
+Kirill Ivkushkin  1 hour ago
+это всё разное
+
+Kirill Ivkushkin  1 hour ago
+адреса контрактов же являются URL'ами, их на один объект может даже быть несколько
+
+Kirill Ivkushkin  1 hour ago
+в статейке Reference про такое упомянуто
+
+Mikhail Glukhov  1 hour ago
+но jetdrop знает идентиф. предыдущего. А получить мы можем его через jet-tree, если хотим получить с LME (тут у нас появляется URL) или с HMN, по Jet-у. Я где-то ошибся?
+
+Kirill Ivkushkin  1 hour ago
+jetdrop знает хэш предыдущего (это можно считать URI), но самому jetdrop'у полноценный URI не нужен от пред блока, как и jet tree
+
+Kirill Ivkushkin  1 hour ago
+и если подумать, то можно понять почему
+
+Mikhail Glukhov  1 hour ago
+потому что он его не ищет. Кейс поиска появляется только в эксплорере, когда юзер хочет проверить целостность
+
+Kirill Ivkushkin  1 hour ago
+не только
+
+Mikhail Glukhov  1 hour ago
+ну или при восстановлении после сбоев, когда мы хотим вычислить актуальное состояние объектов
+
+Kirill Ivkushkin  1 hour ago
+если вдруг у кого-то есть jetdrop, то для поиска своих пред и сл блоков jet tree тоже не нужен
+
+Kirill Ivkushkin  1 hour ago
+блин, ну правда - у jet tree единственная функция и она не про сами jet'ы (edited)
+
+Mikhail Glukhov  1 hour ago
+она про шардинг
+
+Kirill Ivkushkin  1 hour ago
+неа
+
+Mikhail Glukhov  1 hour ago
+о!
+
+Kirill Ivkushkin  1 hour ago
+шардинг это джеты
+
+Kirill Ivkushkin  1 hour ago
+и они могут существовать без jet tree
+
+Mikhail Glukhov  1 hour ago
+если не сплитятся/мерджатся (edited)
+
+Kirill Ivkushkin  1 hour ago
+https://insolario.slack.com/archives/DS90NV6DQ/p1586269557015400?thread_ts=1586261398.001500&cid=DS90NV6DQ
+Kirill Ivkushkin
+и они могут существовать без jet tree
+Direct Message | Today at 5:25 PM | View reply
+
+Kirill Ivkushkin  1 hour ago
+это включает split и merge
+
+Mikhail Glukhov  1 hour ago
+тогда..
+
+Kirill Ivkushkin  1 hour ago
+jet tree является производной проекцией структуры jet'ов
+
+Kirill Ivkushkin  1 hour ago
+и нафиг им не нужна
+
+Kirill Ivkushkin  1 hour ago
+так зачем нужен jet tree?
+
+Mikhail Glukhov  1 hour ago
+тогда я не понимаю зачем он нужен. сейчас попробую подумать
+
+Kirill Ivkushkin  1 hour ago
+ну, это было несколько раз на встречах, включая ту, где я рассказывал про конвейер в начале
+
+Mikhail Glukhov  1 hour ago
+у меня коссвенная мысль о том, что адресация (вернее размер идентификатора) внутри jet-tree растет куда медленнее, т.е. это могло бы быть локатором
+
+Kirill Ivkushkin  1 hour ago
+нет
+
+Kirill Ivkushkin  1 hour ago
+размер ref'а вообщето фиксирован
+
+Mikhail Glukhov  1 hour ago
+тогда я в непонятках..
+
+Kirill Ivkushkin  1 hour ago
+ну, попробую толсто намекнуть
+как происходит определение LME для jet'а?
+а как происходит определение LME для object'а?
+
+Mikhail Glukhov  1 hour ago
+сопоставляя список нод и список jet-ов с помощью хэш-функциии
+
+Mikhail Glukhov  1 hour ago
+(в обоих случаях, если я не ошибаюсь)
+
+Kirill Ivkushkin  1 hour ago
+а конкретнее
+
+Kirill Ivkushkin  1 hour ago
+нет, в этих случаях по разному
+
+Mikhail Glukhov  1 hour ago
+сейчас гляну в доку
+
+Kirill Ivkushkin  45 minutes ago
+даже табличка нарисована ...
+
+Kirill Ivkushkin  41 minutes ago
+хотя табличку надо поправить - она misleading
+
+Mikhail Glukhov  40 minutes ago
+а еще ее тяжело найти
+
+Kirill Ivkushkin  37 minutes ago
+хм, мне казалось, что вполне логично искать это в
+https://insolar.atlassian.net/wiki/spaces/DEV/pages/1103527954/Core+v2+-+Allocation+of+Roles
+
+Kirill Ivkushkin  37 minutes ago
+я дополнил табличку
+
+Kirill Ivkushkin  37 minutes ago
+там же соотв написал и ответ
+
+Mikhail Glukhov  36 minutes ago
+точно. Я пытался найти ссылку в документах про процессу исполнения
+
+Kirill Ivkushkin  28 minutes ago
+так зачем и кому нужен jet tree? :wink:
+
+Mikhail Glukhov  27 minutes ago
+Так. Получается для привязки лайфлайнов к джетам
+
+Kirill Ivkushkin  27 minutes ago
+а по точнее?
+
+Kirill Ivkushkin  26 minutes ago
+https://insolario.slack.com/archives/DS90NV6DQ/p1586270050018400?thread_ts=1586261398.001500&cid=DS90NV6DQ
+Kirill Ivkushkin
+ну, попробую толсто намекнуть
+1. как происходит определение LME для jet'а?
+2. а как происходит определение LME для object'а?
+Direct Message | Today at 5:34 PM | View reply
+
+Kirill Ivkushkin  26 minutes ago
+распиши, можно функциональным видом, не словами
+
+Mikhail Glukhov  25 minutes ago
+JetId + Entropy + ActiveNodes
+я раньше думал что так же
+
+Kirill Ivkushkin  25 minutes ago
+2. да, только у самого jet'а есть его id
+
+Kirill Ivkushkin  25 minutes ago
+а откуда jetid у lifeline'а?
+
+Mikhail Glukhov  24 minutes ago
+а, вот в чем разница.
+
+Kirill Ivkushkin  24 minutes ago
+ну, так распиши
+
+Mikhail Glukhov  24 minutes ago
+у лайфлайна нет id
+
+Kirill Ivkushkin  24 minutes ago
+здрасти
+
+Kirill Ivkushkin  24 minutes ago
+у него есть id
+
+Kirill Ivkushkin  24 minutes ago
+что-то ты выключил опять думалку
+
+Mikhail Glukhov  24 minutes ago
+у него есть другой id , который обозначен как Lifeline ref
+
+Kirill Ivkushkin  23 minutes ago
+1. как происходит определение LME для jet'а?
+2. как происходит определение LME для object'а?
+3. как происходит определение VE для object'а?
+
+Kirill Ivkushkin  23 minutes ago
+давай, формулами плз, со всеми аргументами
+
+Mikhail Glukhov  18 minutes ago
+LME * Jet = JetId + Pulse Entropy + ActiveNodes
+LME * Object = JetId + Pulse Entropy + ActiveNodes
+VE * Object = Lifeline Ref + Pulse Entropy + ActiveNodes
+
+Kirill Ivkushkin  18 minutes ago
+неа
+
+Kirill Ivkushkin  17 minutes ago
+ну, для начала функциональное представление по другому выглядит :slightly_smiling_face: точно знаю
+
+Kirill Ivkushkin  17 minutes ago
+во вторых есть ошибка
+
+Mikhail Glukhov  17 minutes ago
+VE(P, A) ?
+
+Kirill Ivkushkin  17 minutes ago
+это сокращённая нотация
+
+Kirill Ivkushkin  16 minutes ago
+давай, в полном варианте :wink:
+
+Mikhail Glukhov  15 minutes ago
+виртуальный исполнитель объекта A в пульсе P
+
+Kirill Ivkushkin  15 minutes ago
+формулой плз :slightly_smiling_face: просто со всеми аргументами
+
+Mikhail Glukhov  15 minutes ago
+LME(JET(A, P), P)
+
+Kirill Ivkushkin  13 minutes ago
+блин, включи голову, тут не всё
+
+Kirill Ivkushkin  13 minutes ago
+даже уже из написанного выше очевидно, что не всё
+
+Kirill Ivkushkin  13 minutes ago
+а ты со странички копипастишь
+
+Mikhail Glukhov  10 minutes ago
+LME(Jet(A, P) + ActiveNodes) - не знаю как туда записать activelist
+
+Mikhail Glukhov  9 minutes ago
+т.е. я понимаю что дело в подстановке
+
+Kirill Ivkushkin  9 minutes ago
+:sob:
+
+Kirill Ivkushkin  8 minutes ago
+:angry:
+
+Kirill Ivkushkin  7 minutes ago
+VE(A, P) = Choose(From=ActiveList, Role=VN, Key=f(Reference(A), Entropy(P)))
+
+Mikhail Glukhov  6 minutes ago
+o_0 никогда не видел такого
+
+Kirill Ivkushkin  6 minutes ago
+LME(JetN, P) = Choose(From=ActiveList, Role=LMN, Key=f(JetN, Entropy(P)))
+
+Kirill Ivkushkin  5 minutes ago
+да ладно - слева сокращение, справа полный вариант (edited)
+
+Kirill Ivkushkin  5 minutes ago
+такое в формальных налево и на право
+
+Mikhail Glukhov  5 minutes ago
+буду знать
+
+Mikhail Glukhov  4 minutes ago
+ну да мог бы догадаться
+
+Kirill Ivkushkin  4 minutes ago
+и так
+
+Kirill Ivkushkin  4 minutes ago
+повторю
+
+Kirill Ivkushkin  4 minutes ago
+LME(JetN, P) = Choose(From=ActiveList, Role=LMN, Key=f(JetN, Entropy(P)))
+
+Kirill Ivkushkin  4 minutes ago
+3. VE(A, P) = Choose(From=ActiveList, Role=VN, Key=f(Reference(A), Entropy(P)))
+
+Kirill Ivkushkin  3 minutes ago
+2. LME(A, P) = Choose(From=ActiveList, Role=LMN, Key=f(JetOf(Reference(A), JetTree(P)), Entropy(P)))
+
+Kirill Ivkushkin  3 minutes ago
+или
+
+Kirill Ivkushkin  2 minutes ago
+LME(A, P) = LME(JetID(A, JetTree(P)), P)
+
+Kirill Ivkushkin  1 minute ago
+вот и ответ - JetTree нужен VN, чтобы найти LME для объекта
+
+Kirill Ivkushkin  1 minute ago
+а самим LME JetTree не очень нужен
+
+Kirill Ivkushkin  < 1 minute ago
+т.к. разные jet'ы между собой не взаимодействуют, а про самого себя jet знает
+
+Mikhail Glukhov  < 1 minute ago
+теперь все стало кристально ясно.. но я немного чувствую себя идиотом,
+да. Пойду запишу в доку
