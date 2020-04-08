@@ -216,6 +216,8 @@ plantuml-построитель, но пока мне удобнее видет�
   нас вдруг в одном файле окажутся две стейт-машины)
 - Pars - параметры, которые принимает функция состояния
 - Rets - Все возможные возвращаемые значения, которые удалось найти
+- Migr - Если внутри состояния есть вызов SetDefaultMigration, то тут
+  будет его target
 
 #+BEGIN_SRC go :noweb-ref structs
   type FnState struct {
@@ -223,6 +225,7 @@ plantuml-построитель, но пока мне удобнее видет�
       Recv *RecvPair         // Receiver
       Pars map[string]string // Parameters: k:name, v:type
       Rets []*Ret            // All returns
+      Migr string            // Target from SetDefaultMigration or empty
   }
 
 #+END_SRC
@@ -401,8 +404,9 @@ Variant - это структура, которая представляет [TO
               // Show name (debug)
               pf.diag("\n:parseMethod: (sm-name) %s", fn.Name.Name)
 
-              // Find all Return Statements in function content
+              // Find all Return Statements and SetDefaultMigration calls
               var rets = make([]*Ret, 0)
+              var migr = ""
               for _, smth := range fn.Body.List { // ∀ fn.Body.List ← (or RetStmt (Inspect ...))
                   retStmt, ok := smth.(*ast.ReturnStmt)
                   if ok {
@@ -416,7 +420,33 @@ Variant - это структура, которая представляет [TO
                               // return from deep-level function statememt
                               rets = append(rets, pf.collectRets(retStmt, "Deep")...)
                           } else {
-                              //fmt.Printf("\nin: %s", reflect.TypeOf(in))
+                              // Find "ctx.SetDefaultMigration(some_target)"
+                              stmt, ok := in.(*ast.ExprStmt)
+                              if ok {
+                                   callexpr, ok := stmt.X.(*ast.CallExpr)
+                                   if ok {
+                                       selexpr, ok := callexpr.Fun.(*ast.SelectorExpr)
+                                       if ok {
+                                          selexpr_x, ok := selexpr.X.(*ast.Ident)
+                                          if ok {
+                                              if (("ctx" == selexpr_x.Name) &&
+                                                  ("SetDefaultMigration" == selexpr.Sel.Name)) {
+
+                                                  for _, arg := range callexpr.Args {
+                                                      argsel, ok := arg.(*ast.SelectorExpr)
+                                                      if ok {
+                                                          fmt.Printf("\n>>>:[%s]", argsel.Sel.Name)
+                                                      }
+                                                      argnil, ok := arg.(*ast.Ident)
+                                                      if ok {
+                                                          fmt.Printf("\n>>>:[%s]", argnil)
+                                                      }
+                                                  }
+                                              }
+                                          }
+                                       }
+                                  }
+                              }
                           }
                           return true
                       })
@@ -428,6 +458,7 @@ Variant - это структура, которая представляет [TO
                   Recv: recv,
                   Pars: pars,
                   Rets: rets,
+                  Migr: migr,
               }
           }
       }
