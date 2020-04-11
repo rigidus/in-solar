@@ -1435,3 +1435,9 @@ Kirill Ivkushkin  < 1 minute ago
 Mikhail Glukhov  < 1 minute ago
 теперь все стало кристально ясно.. но я немного чувствую себя идиотом,
 да. Пойду запишу в доку
+
+* Tmp
+
+    рисёрч: provisional patent this and that converted to full patent
+    проектирование: implementation design of this and that finalized (as per ok with kirill)
+    документирование: components this and that documented (as per ok with kirill and sofia)

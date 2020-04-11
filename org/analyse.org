@@ -66,7 +66,7 @@ plantuml-построитель, но пока мне удобнее видет�
   <<analyse>>
 #+END_SRC
 
-* Analyse
+* COMMENT Analyse
 
 ~Analyse~ формирует ~uml~, разбирая файл с с помощью ~ParseFile~. Если
 ~ParseFile~ не справляется, она возвращает ~nil~ и мы уходим в панику,
@@ -84,45 +84,68 @@ plantuml-построитель, но пока мне удобнее видет�
 
       pf.diag("\n\n:: ======= resource filename: %s", pf.filename)
 
-      for _, state := range pf.states {
+      //var visitedStates     []string  = nil
+      //var currentMigration  string    = ""
+
+      unvisited := []string{"Init"}
+      visited   := []string{}
+
+      for 0 < len(unvisited) {
+
+          uml += fmt.Sprintf("\nvis: %s", visited)
+          uml += fmt.Sprintf("\nuns: %s", unvisited)
+
+          state := pf.states[unvisited[0]]
+          unvisited = unvisited[1:]
+          visited = append(visited, state.Name)
+
           pf.diag("\n\nfn: %s", state.Name) // Function name
           // pf.diag("\nrecv: %s | %s", state.Recv.Name, state.Recv.Type) // Receiver
           for parName, parType := range state.Pars { // Parameters
               pf.diag("\npar name: %s | type: %s", parName, parType)
           }
-          for _, item := range state.Rets {
-              pf.diag("\n%s: ['%s']", item.Lvl, item.Str)
-              pf.diag("\nfun: ['%s']\nobj: ['%s']", item.Var.Fun, item.Var.Obj)
-              // dbg
-              //uml += fmt.Sprintf("\n ! %s | %s", item.Type, item.Var.Fun)
-              switch item.Var.Fun {
-              case "Stop":
-                  uml += fmt.Sprintf("\n%s --> [*]", state.Name)
-              case "Jump":
-                  uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
-              case "ThenJump":
-                  uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
-              case "JumpExt":
-                  uml += fmt.Sprintf("\n%s --> %s", state.Name, item.Args[0].Fun)
-              case "ThenRepeat":
-                  uml += fmt.Sprintf("\n%s --> %s : ThenRepeat", state.Name, state.Name)
-              case "RepeatOrJumpElse":
-                  uml += fmt.Sprintf("\n%s -[#RoyalBlue]-> %s : RepeatOr(Jump)Else", state.Name, item.Args[2].Fun)
-                  uml += fmt.Sprintf("\n%s -[#DarkGreen]-> %s : RepeatOrJump(Else)", state.Name, item.Args[3].Fun)
-              default:
-                  pf.diag("\n(=> (. %s %s)", item.Var.Obj, item.Var.Fun)
-                  for _, arg := range item.Args {
-                      pf.diag("\n       %s", fmt.Sprintf("(. %s %s)", arg.Obj, arg.Fun))
-                  }
-                  pf.diag(")")
-              }
 
-              // -:- fn representation
-              fmt.Printf("\n(-> (. %s %s)", item.Var.Obj, item.Var.Fun)
-              for _, arg := range item.Args {
-                  pf.diag("\n       %s", fmt.Sprintf("(. %s %s)", arg.Obj, arg.Fun))
-              }
-              pf.diag(")")
+          if "" != state.Migr && "NIL" != state.Migr {
+              uml += fmt.Sprintf("\n%s -[#blue]-> %s", state.Name, state.Migr)
+          }
+
+          for _, ret := range state.Rets {
+              // uml += fmt.Sprintf("\n%s -[#green]-> %s", state.Name, ret)
+
+              pf.diag("\n%s: ['%s']", ret.Lvl, ret.Str)
+                pf.diag("\nfun: ['%s']\nobj: ['%s']", ret.Var.Fun, ret.Var.Obj)
+                // dbg
+                //uml += fmt.Sprintf("\n ! %s | %s", ret.Type, ret.Var.Fun)
+                switch ret.Var.Fun {
+                case "Stop":
+                    uml += fmt.Sprintf("\n%s --> [*]", state.Name)
+                case "Jump":
+                    uml += fmt.Sprintf("\n%s --> %s", state.Name, ret.Args[0].Fun)
+                    unvisited = append(unvisited, ret.Args[0].Fun)
+                case "ThenJump":
+                    uml += fmt.Sprintf("\n%s --> %s", state.Name, ret.Args[0].Fun)
+                case "JumpExt":
+                    uml += fmt.Sprintf("\n%s --> %s", state.Name, ret.Args[0].Fun)
+                case "ThenRepeat":
+                    uml += fmt.Sprintf("\n%s --> %s : ThenRepeat", state.Name, state.Name)
+                case "RepeatOrJumpElse":
+                    uml += fmt.Sprintf("\n%s -[#RoyalBlue]-> %s : RepeatOr(Jump)Else", state.Name, ret.Args[2].Fun)
+                    uml += fmt.Sprintf("\n%s -[#DarkGreen]-> %s : RepeatOrJump(Else)", state.Name, ret.Args[3].Fun)
+                default:
+                    pf.diag("\n(=> (. %s %s)", ret.Var.Obj, ret.Var.Fun)
+                    for _, arg := range ret.Args {
+                        pf.diag("\n       %s", fmt.Sprintf("(. %s %s)", arg.Obj, arg.Fun))
+                    }
+                    pf.diag(")")
+                }
+
+                // -:- fn representation
+                fmt.Printf("\n(-> (. %s %s)", ret.Var.Obj, ret.Var.Fun)
+                for _, arg := range ret.Args {
+                    pf.diag("\n       %s", fmt.Sprintf("(. %s %s)", arg.Obj, arg.Fun))
+                }
+                pf.diag(")")
+
           }
       }
 
@@ -431,15 +454,16 @@ Variant - это структура, которая представляет [TO
                                           if ok {
                                               if (("ctx" == selexpr_x.Name) &&
                                                   ("SetDefaultMigration" == selexpr.Sel.Name)) {
-
                                                   for _, arg := range callexpr.Args {
                                                       argsel, ok := arg.(*ast.SelectorExpr)
                                                       if ok {
                                                           fmt.Printf("\n>>>:[%s]", argsel.Sel.Name)
+                                                          migr = argsel.Sel.Name
                                                       }
                                                       argnil, ok := arg.(*ast.Ident)
                                                       if ok {
                                                           fmt.Printf("\n>>>:[%s]", argnil)
+                                                          migr = "NIL"
                                                       }
                                                   }
                                               }
@@ -601,9 +625,7 @@ Variant - это структура, которая представляет [TO
                           item.Var.Obj = retX.Name
                           pf.diag("\n   :collectRet: (ident) : %s _._", item.Var.Obj)
                           switch item.Var.Fun {
-                          case "Jump":
-                          case "Stop":
-                          case "JumpExt":
+                          case "Jump", "Stop", "JumpExt":
                           default:
                               pf.diag("\n:collectRets: [WARN]: UNKNOWN RET SELECTOR '%s' in '%s.%s'",
                                   item.Var.Fun, item.Var.Obj, item.Var.Fun)
@@ -614,8 +636,7 @@ Variant - это структура, которая представляет [TO
                           item.Var.Obj = subXStr
                           pf.diag("\n   :collectRet: (call to selector) : %s _._", item.Var.Obj)
                           switch item.Var.Fun { // Check Fun (nb: not arg!)
-                          case "ThenRepeat":
-                          case "ThenJump":
+                          case "ThenRepeat", "ThenJump":
                           default:
                               fmt.Printf("\n:collectRets: [WARN]: UNKNOWN RET SUB SELECTOR '%s' in '%s'",
                                   item.Var.Fun, item.Var.Obj, item.Var.Fun)
@@ -695,3 +716,53 @@ Variant - это структура, которая представляет [TO
       return acc
   }
 #+END_SRC
+
+* Object architecture
+
+Первой строчкой в ~Init~ идет
+~ctx.SetDefaultMigration(sm.migrateSendStateBeforeExecution)~ Теперь,
+если пульс сменится - то будет переход в это состояние.
+
+Миграции могут произойти только во время того когда машина не
+исполняется, т.е. между состояниями.
+
+Поэтому если пульс сменится, то мы окажемся в состоянии
+~migrateSendStateBeforeExecution~, где первым делом вызывается
+~ctx.SetDefaultMigration(nil)~, (что запрещает миграции, если пульс
+сменится снова, я так понимаю) а потом следует переход в
+~stateSendStateBeforeExecution~.  Я не понимаю зачем нужен этот переход,
+потому что можно было включить это состояние в предыдущее и это ничего не
+поменяло бы.
+
+Тем не менее, мы посылаем ExecutorResults на VE с новым состоянием,
+зависящим от sm.PreviousExecutorState (не понимаю зачем) и делаем
+~Stop~ - на этом ветка со сменой пульса сразу после Init-а завершается.
+
+Таким образом, при сборке UML нужно показать что из состояния где есть
+вызов ~SetDefaultMigration~ есть перезод в состояние, которое является
+аргумент-ом ~SetDefaultMigration~, кроме тех случаев, когда этот
+аргумент - nil. Что будет если в таком случае в этот момент придет смена
+пульса?
+
+
+Если же пульс не меняется, то из ~Init~-a мы переходим в
+~stepCheckPreviousExecutor~.
+
+В ~sm~ есть ~PreviousExecutorState~ по которому мы свитчимся и отсюда
+есть три перехода:
+- stepGetPendingsInformation
+- Repeat
+- stepGetLatestValidatedState
+
+
+
+
+в migrateStop мы попадаем из “stepGetLatestValidatedState”
+2:36
+после выхода из (!!)
+
+stateGotLatestValidatedStatePrototypeAndCode
+
+включается
+
+migrateSendStateAfterExecution
