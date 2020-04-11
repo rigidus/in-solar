@@ -66,7 +66,7 @@ plantuml-построитель, но пока мне удобнее видет�
   <<analyse>>
 #+END_SRC
 
-* COMMENT Analyse
+* Analyse
 
 ~Analyse~ формирует ~uml~, разбирая файл с с помощью ~ParseFile~. Если
 ~ParseFile~ не справляется, она возвращает ~nil~ и мы уходим в панику,
@@ -74,7 +74,30 @@ plantuml-построитель, но пока мне удобнее видет�
 
 #+NAME: analyse
 #+BEGIN_SRC go :noweb yes
+  // SetDiff returns a new set with all the elements that exist in
+  // the first set and don't exist in the second set
+  func  SetDiff (s1 []string, s2 []string) []string {
+      ret := []string{}
+      for i1 := range s1 {
+          notfound := true
+          for i2 := range s2 {
+              if s1[i1] == s2[i2] {
+                  notfound = false
+              }
+          }
+          if notfound {
+             ret = append(ret, s1[i1])
+          }
+      }
+      return ret
+  }
+
   func analyse(filename string) string {
+
+      s1 := []string {"alfa", "beta", "gamma", "theta"}
+      s2 := []string {"beta", "theta"}
+      fmt.Println(SetDiff(s1, s2))
+
       pathname := fmt.Sprintf("%s/%s", os.Getenv("GOPATH"), filename)
       pf := ParseFile(pathname, true)
       if nil == pf {
