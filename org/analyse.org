@@ -74,18 +74,21 @@ plantuml-построитель, но пока мне удобнее видет�
 
 #+NAME: analyse
 #+BEGIN_SRC go :noweb yes
+  func isContainInSet (s1 []string, item string) bool {
+      for i1 := range s1 {
+          if s1[i1] == item {
+              return true
+          }
+      }
+      return false
+  }
+
   // SetDiff returns a new set with all the elements that exist in
   // the first set and don't exist in the second set
-  func  SetDiff (s1 []string, s2 []string) []string {
+  func SetDiff (s1 []string, s2 []string) []string {
       ret := []string{}
       for i1 := range s1 {
-          notfound := true
-          for i2 := range s2 {
-              if s1[i1] == s2[i2] {
-                  notfound = false
-              }
-          }
-          if notfound {
+          if !isContainInSet(s2, s1[i1]) {
              ret = append(ret, s1[i1])
           }
       }
@@ -93,34 +96,25 @@ plantuml-построитель, но пока мне удобнее видет�
   }
 
   func analyse(filename string) string {
-
-      s1 := []string {"alfa", "beta", "gamma", "theta"}
-      s2 := []string {"beta", "theta"}
-      fmt.Println(SetDiff(s1, s2))
-
       pathname := fmt.Sprintf("%s/%s", os.Getenv("GOPATH"), filename)
       pf := ParseFile(pathname, true)
       if nil == pf {
           panic("Cannot parse file")
       }
       uml := "@startuml"
-
       pf.diag("\n\n:: ======= resource filename: %s", pf.filename)
 
-      //var visitedStates     []string  = nil
-      //var currentMigration  string    = ""
-
+      curr_migr := ""
       unvisited := []string{"Init"}
       visited   := []string{}
 
       for 0 < len(unvisited) {
-
-          uml += fmt.Sprintf("\nvis: %s", visited)
-          uml += fmt.Sprintf("\nuns: %s", unvisited)
+          uml += fmt.Sprintf("\n-vis: %s", visited)
+          uml += fmt.Sprintf("\n-uns: %s", unvisited)
 
           state := pf.states[unvisited[0]]
-          unvisited = unvisited[1:]
           visited = append(visited, state.Name)
+          // uml += fmt.Sprintf("\n:state.Migr:[%s]", state.Migr)
 
           pf.diag("\n\nfn: %s", state.Name) // Function name
           // pf.diag("\nrecv: %s | %s", state.Recv.Name, state.Recv.Type) // Receiver
@@ -128,8 +122,21 @@ plantuml-построитель, но пока мне удобнее видет�
               pf.diag("\npar name: %s | type: %s", parName, parType)
           }
 
-          if "" != state.Migr && "NIL" != state.Migr {
-              uml += fmt.Sprintf("\n%s -[#blue]-> %s", state.Name, state.Migr)
+          if "NIL" == state.Migr {
+              curr_migr = ""
+              uml += fmt.Sprintf("\n:curr_migr: set to EMPTY")
+          } else if "" != state.Migr {
+              curr_migr = state.Migr
+              uml += fmt.Sprintf("\n:curr_migr: set to `%s'", state.Migr)
+          }
+
+          uml += fmt.Sprintf("\n:curr_migr:[%s]", curr_migr)
+
+          if curr_migr != "" {
+              uml += fmt.Sprintf("\n%s -[#blue]-> %s", state.Name, curr_migr)
+              if !isContainInSet(visited, curr_migr) {
+                  unvisited = append(unvisited, curr_migr)
+              }
           }
 
           for _, ret := range state.Rets {
@@ -168,10 +175,9 @@ plantuml-построитель, но пока мне удобнее видет�
                     pf.diag("\n       %s", fmt.Sprintf("(. %s %s)", arg.Obj, arg.Fun))
                 }
                 pf.diag(")")
-
           }
+          unvisited = SetDiff(unvisited, visited)
       }
-
       uml += "\n@enduml\n"
       return uml
   }
