@@ -104,13 +104,12 @@ plantuml-построитель, но пока мне удобнее видет�
       uml := "@startuml"
       pf.diag("\n\n:: ======= resource filename: %s", pf.filename)
 
-      curr_migr := ""
       unvisited := []string{"Init"}
       visited   := []string{}
 
       for 0 < len(unvisited) {
-          uml += fmt.Sprintf("\n-vis: %s", visited)
-          uml += fmt.Sprintf("\n-uns: %s", unvisited)
+          // uml += fmt.Sprintf("\n-vis: %s", visited)
+          // uml += fmt.Sprintf("\n-uns: %s", unvisited)
 
           state := pf.states[unvisited[0]]
           visited = append(visited, state.Name)
@@ -122,20 +121,29 @@ plantuml-построитель, но пока мне удобнее видет�
               pf.diag("\npar name: %s | type: %s", parName, parType)
           }
 
+          // curr_migr propagate migration to outgoing arrows
+          var possible_migrations []string = nil
+          //uml += fmt.Sprintf("\n:state.Migr: [%s]", state.Migr)
           if "NIL" == state.Migr {
-              curr_migr = ""
-              uml += fmt.Sprintf("\n:curr_migr: set to EMPTY")
-          } else if "" != state.Migr {
-              curr_migr = state.Migr
-              uml += fmt.Sprintf("\n:curr_migr: set to `%s'", state.Migr)
+              possible_migrations = nil
+              uml += fmt.Sprintf("\n%s : %s", state.Name, "NIL")
+              // uml += fmt.Sprintf("\n:curr_migr: set to EMPTY")
+          } else if "" == state.Migr {
+              uml += fmt.Sprintf("\n%s : %s", state.Name, "INHERITED")
+              possible_migrations = state.Prop
+          } else {
+              if nil != state.Prop {
+                  possible_migrations = append(state.Prop, state.Migr)
+              } else {
+                  possible_migrations = []string{state.Migr}
+              }
           }
 
-          uml += fmt.Sprintf("\n:curr_migr:[%s]", curr_migr)
-
-          if curr_migr != "" {
-              uml += fmt.Sprintf("\n%s -[#blue]-> %s", state.Name, curr_migr)
-              if !isContainInSet(visited, curr_migr) {
-                  unvisited = append(unvisited, curr_migr)
+          for _, pos_migr := range possible_migrations {
+              uml += fmt.Sprintf("\n%s : %s", state.Name, pos_migr)
+              uml += fmt.Sprintf("\n%s -[#blue]-> %s", state.Name, pos_migr)
+              if !isContainInSet(visited, pos_migr) {
+                  unvisited = append(unvisited, pos_migr)
               }
           }
 
@@ -152,6 +160,9 @@ plantuml-построитель, но пока мне удобнее видет�
                 case "Jump":
                     uml += fmt.Sprintf("\n%s --> %s", state.Name, ret.Args[0].Fun)
                     unvisited = append(unvisited, ret.Args[0].Fun)
+                    if nil != possible_migrations {
+                        pf.states[ret.Args[0].Fun].Prop = append(pf.states[ret.Args[0].Fun].Prop, possible_migrations...)
+                    }
                 case "ThenJump":
                     uml += fmt.Sprintf("\n%s --> %s", state.Name, ret.Args[0].Fun)
                 case "JumpExt":
@@ -178,6 +189,16 @@ plantuml-построитель, но пока мне удобнее видет�
           }
           unvisited = SetDiff(unvisited, visited)
       }
+
+      keys := make([]string, 0, len(pf.states))
+      for k := range pf.states {
+          keys = append(keys, k)
+      }
+
+      for _, state := range SetDiff(keys, visited) {
+          uml += fmt.Sprintf("\n%s : unvisited", state)
+      }
+
       uml += "\n@enduml\n"
       return uml
   }
@@ -278,6 +299,7 @@ plantuml-построитель, но пока мне удобнее видет�
       Pars map[string]string // Parameters: k:name, v:type
       Rets []*Ret            // All returns
       Migr string            // Target from SetDefaultMigration or empty
+      Prop []string
   }
 
 #+END_SRC
