@@ -171,7 +171,7 @@ plantuml-построитель, но пока мне удобнее видет�
                 case "JumpExt":
                     uml += fmt.Sprintf("\n%s --> %s : %s", state.Name, ret.Args[0].Fun, ret.Var.Fun)
                     unvisited = append(unvisited, ret.Args[0].Fun)
-                    uml += fmt.Sprintf("\n%s -[#DarkGreen]-> %s : %s-(StepMigration)", state.Name, ret.StepMigration, ret.Var.Fun)
+                    uml += fmt.Sprintf("\n%s -[#DarkGreen]-> %s : %s+(StepMigration)", state.Name, ret.StepMigration, ret.Var.Fun)
                     unvisited = append(unvisited, ret.StepMigration)
                 case "ThenRepeat":
                     uml += fmt.Sprintf("\n%s --> %s : ThenRepeat", state.Name, state.Name)
