@@ -1,15 +1,17 @@
 package main
 
 import (
-    "fmt"
-    "os"
-    "go/ast"
-    "go/token"
-    "go/parser"
     "errors"
+    "flag"
+    "fmt"
+    "go/ast"
+    "go/parser"
+    "go/token"
     "io/ioutil"
-    "strings"
+    "os"
+    "path/filepath"
     "reflect"
+    "strings"
 )
 
 const (
@@ -55,10 +57,16 @@ type Variant struct {
 
 
 func main () {
-    uml := analyse(filename)
+    path := flag.String("f", filename, "Path to file")
+    uml := analyse(*path)
     // uml += "uml" // rem
     // fmt.Printf("\n") // rem
-    fmt.Printf("\n\n\n\n\n~~~~~~~~~~~~~~~~~\n%s", uml)
+    console := flag.Bool("c", false, "Print uml diagram to console")
+    if *console {
+        fmt.Printf("\n\n\n\n\n~~~~~~~~~~~~~~~~~\n%s", uml)
+    }
+
+    writeUml(*path, uml)
 }
 
 func isContainInSet (s1 []string, item string) bool {
@@ -93,10 +101,11 @@ func SetUniWoDup (s1 []string, s2 []string) []string {
 }
 
 func analyse(filename string) string {
+    debug := flag.Bool("d", false, "Enable debug")
     pathname := fmt.Sprintf("%s/%s", os.Getenv("GOPATH"), filename)
-    pf := ParseFile(pathname, true)
+    pf := ParseFile(pathname, *debug)
     if nil == pf {
-        panic("Cannot parse file")
+        panic("Cannot parse file "+pathname)
     }
     uml := "@startuml"
     pf.diag("\n\n:: ======= resource filename: %s", pf.filename)
@@ -174,7 +183,8 @@ func analyse(filename string) string {
               }
 
               // -:- fn representation
-              fmt.Printf("\n(-> (. %s %s)", ret.Var.Obj, ret.Var.Fun)
+              pf.diag(fmt.Sprintf("\n(-> (. %s %s)", ret.Var.Obj, ret.Var.Fun))
+
               for _, arg := range ret.Args {
                   pf.diag("\n       %s", fmt.Sprintf("(. %s %s)", arg.Obj, arg.Fun))
               }
@@ -257,6 +267,34 @@ func ParseFile(fileName string, dbg ...bool) *ParsedFile {
     })
 
     return pf
+}
+
+func writeUml(path string, uml string)  {
+    name := filepath.Base(path)
+    name = strings.Replace(name, ".go", "", -1)+".plantuml"
+    umlPath := fmt.Sprintf("%s/%s/%s", os.Getenv("GOPATH"), filepath.Dir(path), name)
+
+    file, err := os.Create(umlPath)
+    if err != nil {
+        fmt.Printf("Failed to create file: %s\n", umlPath)
+        return
+    }
+
+    defer file.Close()
+
+    _, err = file.WriteString(uml)
+    if err != nil {
+        fmt.Printf("Failed to write file: %s\n", umlPath)
+        return
+    }
+
+    err = file.Sync()
+    if err != nil {
+        fmt.Printf("Failed to sync file: %s\n", umlPath)
+        return
+    }
+
+    fmt.Printf("Uml saved: %s", umlPath)
 }
 
 func slurpFile(fileName string) ([]byte, error) {
@@ -360,12 +398,13 @@ func (pf *ParsedFile) parseMethod(fn *ast.FuncDecl) {
                                                 for _, arg := range callexpr.Args {
                                                     argsel, ok := arg.(*ast.SelectorExpr)
                                                     if ok {
-                                                        fmt.Printf("\n>>>:[%s]", argsel.Sel.Name)
+                                                        pf.diag(fmt.Sprintf("\n>>>:[%s]", argsel.Sel.Name))
+
                                                         migr = argsel.Sel.Name
                                                     }
                                                     argnil, ok := arg.(*ast.Ident)
                                                     if ok {
-                                                        fmt.Printf("\n>>>:[%s]", argnil)
+                                                        pf.diag(fmt.Sprintf("\n>>>:[%s]", argnil))
                                                         migr = "NIL"
                                                     }
                                                 }
