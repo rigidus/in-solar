@@ -14,6 +14,10 @@ import (
     "strings"
 )
 
+const (
+    filename  = "src/github.com/insolar/assured-ledger/ledger-core/v2/logicrunner/sm_object/object.go"
+)
+
 type ParsedFile struct {
     dbg      bool
     filename string
@@ -52,12 +56,9 @@ type Variant struct {
 }
 
 
-func main() {
-    path := flag.String("f", "", "Path to file")
-    if *path == "" {
-        fmt.Print("Path to file is not specific")
-        return
-    }
+func main () {
+    path := flag.String("f", filename, "Path to file")
+
     uml := analyse(*path)
     // uml += "uml" // rem
     // fmt.Printf("\n") // rem
@@ -65,7 +66,6 @@ func main() {
     if *console {
         fmt.Printf("\n\n\n\n\n~~~~~~~~~~~~~~~~~\n%s", uml)
     }
-
     writeUml(*path, uml)
 }
 
@@ -237,6 +237,34 @@ func analyse(filename string) string {
     return uml
 }
 
+func writeUml(path string, uml string)  {
+    name := filepath.Base(path)
+    name = strings.Replace(name, ".go", "", -1)+".plantuml"
+    umlPath := fmt.Sprintf("%s/%s/%s", os.Getenv("GOPATH"), filepath.Dir(path), name)
+
+    file, err := os.Create(umlPath)
+    if err != nil {
+        fmt.Printf("Failed to create file: %s\n", umlPath)
+        return
+    }
+
+    defer file.Close()
+
+    _, err = file.WriteString(uml)
+    if err != nil {
+        fmt.Printf("Failed to write file: %s\n", umlPath)
+        return
+    }
+
+    err = file.Sync()
+    if err != nil {
+        fmt.Printf("Failed to sync file: %s\n", umlPath)
+        return
+    }
+
+    fmt.Printf("Uml saved: %s\n", umlPath)
+}
+
 func ParseFile(fileName string, dbg ...bool) *ParsedFile {
     pf := &ParsedFile{
         filename: fileName,
@@ -269,34 +297,6 @@ func ParseFile(fileName string, dbg ...bool) *ParsedFile {
     return pf
 }
 
-func writeUml(path string, uml string)  {
-    name := filepath.Base(path)
-    name = strings.Replace(name, ".go", "", -1)+".plantuml"
-    umlPath := fmt.Sprintf("%s/%s/%s", os.Getenv("GOPATH"), filepath.Dir(path), name)
-
-    file, err := os.Create(umlPath)
-    if err != nil {
-        fmt.Printf("Failed to create file: %s\n", umlPath)
-        return
-    }
-
-    defer file.Close()
-
-    _, err = file.WriteString(uml)
-    if err != nil {
-        fmt.Printf("Failed to write file: %s\n", umlPath)
-        return
-    }
-
-    err = file.Sync()
-    if err != nil {
-        fmt.Printf("Failed to sync file: %s\n", umlPath)
-        return
-    }
-
-    fmt.Printf("Uml saved: %s", umlPath)
-}
-
 func slurpFile(fileName string) ([]byte, error) {
     file, err := os.OpenFile(fileName, os.O_RDONLY, 0)
     if err != nil {
@@ -317,117 +317,125 @@ func (pf *ParsedFile) parseMethod(fn *ast.FuncDecl) {
     if nil == fn.Recv {
         pf.diag("\n:parseMethod: skip %s - No receiver", fn.Name.Name)
     } else {
-
         for _, fld := range fn.Recv.List {
+            pf.parseRecv(fn, fld)
+        }
+    }
+}
 
-            // Receiver
-            recv := &RecvPair{
-                Name: fld.Names[0].Name,
-                Type: fmt.Sprintf("%s", pf.code[fld.Type.Pos()-1:fld.Type.End()-1]),
-            }
+func (pf *ParsedFile) parseRecv(fn *ast.FuncDecl, fld *ast.Field) {
 
-            // Parameters
-            pars := make(map[string]string, 0)
-            for _, par := range fn.Type.Params.List {
-                if nil == par.Names {
-                    pars["unnamed-param"] = fmt.Sprintf("%s", pf.code[par.Type.Pos()-1:par.Type.End()-1])
-                } else {
-                    pars[par.Names[0].Name] = fmt.Sprintf("%s", pf.code[par.Type.Pos()-1:par.Type.End()-1])
-                }
-            }
+    // Receiver
+    recv := &RecvPair{
+        Name: fld.Names[0].Name,
+        Type: fmt.Sprintf("%s", pf.code[fld.Type.Pos()-1:fld.Type.End()-1]),
+    }
 
-            // I want to analyse only methods, who takes context
-            if !isMethodTakesCtx(pars) {
-                pf.diag("\n:parseMethod: skip %s - Doesn`t take CTX", fn.Name.Name)
-                continue
-            }
+    // Parameters
+    pars := make(map[string]string, 0)
+    name := "unnamed-param"
+    for _, par := range fn.Type.Params.List {
+        if nil != par.Names {
+            name = par.Names[0].Name
+        }
+        pars[name] = fmt.Sprintf("%s", pf.code[par.Type.Pos()-1:par.Type.End()-1])
+    }
 
-            // I want analyse only methods, which returned values
-            if nil == fn.Type.Results {
-                pf.diag("\n:parseMethod: skip %s - No return value", fn.Name.Name)
-                continue
-            }
 
-            // I want to analyze methods which have a `smashine.StateUpdate' result type
-            res := fn.Type.Results.List[0].Type
-            resSel, ok := res.(*ast.SelectorExpr)
-            if !ok || "StateUpdate" != resSel.Sel.Name {
-                if pf.dbg {
-                    fmt.Printf("\n:parseMethod: skip %s - No StateUpdate result type", fn.Name.Name)
-                }
-                continue
-            }
-            resXstr := fmt.Sprintf("%s", pf.code[resSel.X.Pos()-1:resSel.X.End()-1])
-            if "smachine" != resXstr {
-                if pf.dbg {
-                    fmt.Printf("\n:parseMethod: skip %s - No smachine selector result type", fn.Name.Name)
-                }
-                continue
-            }
+    // I want to analyse only methods, who takes context
+    if !isMethodTakesCtx(pars) {
+        pf.diag("\n:parseMethod: skip %s - Doesn`t take CTX", fn.Name.Name)
+        return
+    }
 
-            // Show name (debug)
-            pf.diag("\n:parseMethod: (sm-name) %s", fn.Name.Name)
+    // I want analyse only methods, which returned values
+    if nil == fn.Type.Results {
+        pf.diag("\n:parseMethod: skip %s - No return value", fn.Name.Name)
+        return
+    }
 
-            // Find all Return Statements and SetDefaultMigration calls
-            var rets = make([]*Ret, 0)
-            var migr = ""
-            for _, smth := range fn.Body.List { // ∀ fn.Body.List ← (or RetStmt (Inspect ...))
-                retStmt, ok := smth.(*ast.ReturnStmt)
+    // I want to analyze methods which have a `smashine.StateUpdate' result type
+    res := fn.Type.Results.List[0].Type
+    resSel, ok := res.(*ast.SelectorExpr)
+    if !ok || "StateUpdate" != resSel.Sel.Name {
+        if pf.dbg {
+            fmt.Printf("\n:parseMethod: skip %s - No StateUpdate result type", fn.Name.Name)
+        }
+        return
+    }
+    resXstr := fmt.Sprintf("%s", pf.code[resSel.X.Pos()-1:resSel.X.End()-1])
+    if "smachine" != resXstr {
+        if pf.dbg {
+            fmt.Printf("\n:parseMethod: skip %s - No smachine selector result type", fn.Name.Name)
+        }
+        return
+    }
+
+    // Show name (debug)
+    pf.diag("\n:parseMethod: (sm-name) %s", fn.Name.Name)
+
+    // Find all Return Statements and SetDefaultMigration calls
+    var rets = make([]*Ret, 0)
+    var migr = ""
+    for _, smth := range fn.Body.List { // ∀ fn.Body.List ← (or RetStmt (Inspect ...))
+        retStmt, ok := smth.(*ast.ReturnStmt)
+        if ok {
+            // return from top-level statements of function
+            rets = append(rets, pf.collectRets(retStmt, "Top")...)
+        } else {
+            ast.Inspect(smth, func(in ast.Node) bool {
+                // Find Return Statements
+                retStmt, ok := in.(*ast.ReturnStmt) // ←
                 if ok {
-                    // return from top-level statements of function
-                    rets = append(rets, pf.collectRets(retStmt, "Top")...)
+                    // return from deep-level function statememt
+                    rets = append(rets, pf.collectRets(retStmt, "Deep")...)
                 } else {
-                    ast.Inspect(smth, func(in ast.Node) bool {
-                        // Find Return Statements
-                        retStmt, ok := in.(*ast.ReturnStmt) // ←
-                        if ok {
-                            // return from deep-level function statememt
-                            rets = append(rets, pf.collectRets(retStmt, "Deep")...)
-                        } else {
-                            // Find "ctx.SetDefaultMigration(some_target)"
-                            stmt, ok := in.(*ast.ExprStmt)
-                            if ok {
-                                 callexpr, ok := stmt.X.(*ast.CallExpr)
-                                 if ok {
-                                     selexpr, ok := callexpr.Fun.(*ast.SelectorExpr)
-                                     if ok {
-                                        selexpr_x, ok := selexpr.X.(*ast.Ident)
-                                        if ok {
-                                            if (("ctx" == selexpr_x.Name) &&
-                                                ("SetDefaultMigration" == selexpr.Sel.Name)) {
-                                                for _, arg := range callexpr.Args {
-                                                    argsel, ok := arg.(*ast.SelectorExpr)
-                                                    if ok {
-                                                        pf.diag(fmt.Sprintf("\n>>>:[%s]", argsel.Sel.Name))
+                    migr = pf.findSetDefaultMigration(migr, in)
+                }
+                return true
+            })
+        }
+    }
 
-                                                        migr = argsel.Sel.Name
-                                                    }
-                                                    argnil, ok := arg.(*ast.Ident)
-                                                    if ok {
-                                                        pf.diag(fmt.Sprintf("\n>>>:[%s]", argnil))
-                                                        migr = "NIL"
-                                                    }
-                                                }
-                                            }
-                                        }
-                                     }
-                                }
+    pf.states[fn.Name.Name] = &FnState{
+        Name: fn.Name.Name,
+        Recv: recv,
+        Pars: pars,
+        Rets: rets,
+        Migr: migr,
+    }
+}
+
+func (pf *ParsedFile) findSetDefaultMigration (migr string, in ast.Node) string {
+    // Find "ctx.SetDefaultMigration(some_target)"
+    stmt, ok := in.(*ast.ExprStmt)
+    if ok {
+        callexpr, ok := stmt.X.(*ast.CallExpr)
+        if ok {
+            selexpr, ok := callexpr.Fun.(*ast.SelectorExpr)
+            if ok {
+                selexpr_x, ok := selexpr.X.(*ast.Ident)
+                if ok {
+                    if (("ctx" == selexpr_x.Name) &&
+                        ("SetDefaultMigration" == selexpr.Sel.Name)) {
+                        for _, arg := range callexpr.Args {
+                            argsel, ok := arg.(*ast.SelectorExpr)
+                            if ok {
+                                pf.diag(fmt.Sprintf("\n>>>:[%s]", argsel.Sel.Name))
+                                migr = argsel.Sel.Name
+                            }
+                            argnil, ok := arg.(*ast.Ident)
+                            if ok {
+                                pf.diag(fmt.Sprintf("\n>>>:[%s]", argnil))
+                                migr = "NIL"
                             }
                         }
-                        return true
-                    })
+                    }
                 }
-            }
-
-            pf.states[fn.Name.Name] = &FnState{
-                Name: fn.Name.Name,
-                Recv: recv,
-                Pars: pars,
-                Rets: rets,
-                Migr: migr,
             }
         }
     }
+    return migr
 }
 
 func (pf *ParsedFile) diag(msg string, par ...interface{}) {
