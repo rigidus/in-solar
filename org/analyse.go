@@ -14,10 +14,6 @@ import (
     "strings"
 )
 
-const (
-    filename  = "src/github.com/insolar/assured-ledger/ledger-core/v2/logicrunner/sm_object/object.go"
-)
-
 type ParsedFile struct {
     dbg      bool
     filename string
@@ -56,8 +52,12 @@ type Variant struct {
 }
 
 
-func main () {
-    path := flag.String("f", filename, "Path to file")
+func main() {
+    path := flag.String("f", "", "Path to file")
+    if *path == "" {
+        fmt.Print("Path to file is not specific")
+        return
+    }
     uml := analyse(*path)
     // uml += "uml" // rem
     // fmt.Printf("\n") // rem
